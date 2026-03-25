@@ -1,0 +1,37 @@
+"""AgentProbe — red-teaming framework for AI agent systems."""
+
+__version__ = "0.1.0"
+
+from agentprobe.models.schemas import (
+    AttackType,
+    OWASPCategory,
+    Severity,
+    AttackOutcome,
+    ToolInfo,
+    TargetProfile,
+    AttackPayload,
+    AttackResult,
+    ScanResult,
+    VulnerabilityFinding,
+    VulnerabilityReport,
+)
+from agentprobe.config import load_config, get_api_key
+
+__all__ = [
+    "__version__",
+    # config
+    "load_config",
+    "get_api_key",
+    # models
+    "AttackType",
+    "OWASPCategory",
+    "Severity",
+    "AttackOutcome",
+    "ToolInfo",
+    "TargetProfile",
+    "AttackPayload",
+    "AttackResult",
+    "ScanResult",
+    "VulnerabilityFinding",
+    "VulnerabilityReport",
+]
