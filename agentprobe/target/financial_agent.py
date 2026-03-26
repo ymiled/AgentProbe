@@ -9,6 +9,10 @@ import os
 from typing import Any
 
 from langchain_anthropic import ChatAnthropic
+try:
+    from langchain_groq import ChatGroq
+except Exception:
+    ChatGroq = None
 from langchain_core.messages import HumanMessage, AIMessage, ToolMessage, SystemMessage
 from langgraph.graph import StateGraph, MessagesState, START, END
 from langgraph.prebuilt import ToolNode
@@ -44,12 +48,24 @@ _TOOLS = [read_document, query_database, write_summary]
 # Graph construction
 # ---------------------------------------------------------------------------
 
-def _build_graph(model: str, temperature: float) -> Any:
-    llm = ChatAnthropic(
-        model=model,
-        temperature=temperature,
-        api_key=os.environ.get("ANTHROPIC_API_KEY", ""),
-    ).bind_tools(_TOOLS)
+def _build_graph(model: str, temperature: float, provider: str, api_key_env: str) -> Any:
+    provider_normalized = (provider or "anthropic").strip().lower()
+    api_key = os.environ.get(api_key_env, "")
+
+    if provider_normalized == "groq":
+        if ChatGroq is None:
+            raise ImportError("langchain-groq is required for provider='groq'. Install 'langchain-groq'.")
+        llm = ChatGroq(
+            model=model,
+            temperature=temperature,
+            api_key=api_key,
+        ).bind_tools(_TOOLS)
+    else:
+        llm = ChatAnthropic(
+            model=model,
+            temperature=temperature,
+            api_key=api_key or os.environ.get("ANTHROPIC_API_KEY", ""),
+        ).bind_tools(_TOOLS)
 
     def agent_node(state: MessagesState) -> dict:
         messages = [SystemMessage(content=SYSTEM_PROMPT)] + list(state["messages"])
@@ -87,10 +103,12 @@ class TargetAgent:
 
     def __init__(self, config: dict | None = None):
         cfg = config or {}
-        model = cfg.get("model", "claude-sonnet-4-6")
+        model = cfg.get("model", "llama-3.3-70b-versatile")
         temperature = cfg.get("temperature", 0.7)
+        provider = cfg.get("provider", "anthropic")
+        api_key_env = cfg.get("api_key_env", "ANTHROPIC_API_KEY")
 
-        self._graph = _build_graph(model, temperature)
+        self._graph = _build_graph(model, temperature, provider, api_key_env)
         self._history: list = []
         initialize_database()
 

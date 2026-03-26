@@ -2,12 +2,14 @@ import os
 import yaml
 from typing import Any
 
+from dotenv import load_dotenv
+
 
 DEFAULT_CONFIG: dict[str, Any] = {
     "llm": {
-        "provider": "anthropic",
-        "model": "claude-sonnet-4-20250514",
-        "api_key_env": "ANTHROPIC_API_KEY",
+        "provider": "groq",
+        "model": "llama-3.3-70b-versatile",
+        "api_key_env": "GROQ_API_KEY",
         "max_tokens": 4096,
         "temperature": 0.7,
     },
@@ -32,6 +34,8 @@ DEFAULT_CONFIG: dict[str, Any] = {
     },
 }
 
+load_dotenv(override=False)
+
 
 def load_config(path: str | None = None) -> dict[str, Any]:
     """Load configuration, merging YAML file over defaults if provided.
@@ -42,6 +46,9 @@ def load_config(path: str | None = None) -> dict[str, Any]:
     3. agentprobe.yaml in the current working directory
     4. Defaults only
     """
+    # Re-load to ensure current working directory changes are reflected.
+    load_dotenv(override=False)
+
     config = _deep_copy(DEFAULT_CONFIG)
 
     yaml_path = path or os.environ.get("AGENTPROBE_CONFIG") or _find_default_yaml()
@@ -55,6 +62,8 @@ def load_config(path: str | None = None) -> dict[str, Any]:
 
 def get_api_key(config: dict[str, Any]) -> str:
     """Resolve the LLM API key from the environment."""
+    load_dotenv(override=False)
+
     env_var = config["llm"]["api_key_env"]
     key = os.environ.get(env_var, "")
     if not key:

@@ -124,4 +124,4 @@ class PromptExtractionAttack(BaseAttack):
     # ------------------------------------------------------------------
 
     def evaluate_response(self, payload: AttackPayload, response: str) -> dict:
-        return self._llm_evaluate(payload, response)
+        return self._hybrid_evaluate(payload, response)

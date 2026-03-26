@@ -1,0 +1,287 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AgentProbe Security Report</title>
+  <style>
+    :root {
+      --bg: #0f1218;
+      --panel: #161b22;
+      --panel-2: #1f2630;
+      --text: #e6edf3;
+      --muted: #9aa6b2;
+      --line: #2d3744;
+      --critical: #ff5d73;
+      --high: #ff9f43;
+      --medium: #ffd166;
+      --low: #59d185;
+      --accent: #4cc9f0;
+      --banner: linear-gradient(120deg, #182536, #1c2e46 50%, #233756);
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      background: radial-gradient(circle at 10% -10%, #22304a 0%, transparent 35%),
+                  radial-gradient(circle at 110% 10%, #35264a 0%, transparent 30%),
+                  var(--bg);
+      color: var(--text);
+      font-family: "Segoe UI", "SF Pro Text", "Helvetica Neue", sans-serif;
+      line-height: 1.45;
+    }
+
+    .container {
+      max-width: 1180px;
+      margin: 0 auto;
+      padding: 24px;
+    }
+
+    .risk-banner {
+      background: var(--banner);
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      padding: 20px;
+      margin-bottom: 20px;
+      box-shadow: 0 12px 26px rgba(0, 0, 0, 0.25);
+    }
+
+    .risk-title { margin: 0 0 8px; font-size: 22px; }
+    .risk-meta { margin: 0; color: var(--muted); }
+
+    .pill {
+      display: inline-block;
+      margin-left: 8px;
+      padding: 4px 10px;
+      border-radius: 999px;
+      border: 1px solid var(--line);
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+      margin-bottom: 20px;
+    }
+
+    .card {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 16px;
+    }
+
+    h2 { margin: 0 0 12px; font-size: 18px; }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 14px;
+      overflow: hidden;
+      border-radius: 10px;
+      border: 1px solid var(--line);
+    }
+
+    th, td {
+      padding: 10px;
+      text-align: left;
+      border-bottom: 1px solid var(--line);
+    }
+
+    th { background: #141920; color: var(--muted); font-weight: 600; }
+    tr:last-child td { border-bottom: none; }
+
+    .sev-critical { color: var(--critical); font-weight: 700; }
+    .sev-high { color: var(--high); font-weight: 700; }
+    .sev-medium { color: var(--medium); font-weight: 700; }
+    .sev-low { color: var(--low); font-weight: 700; }
+
+    .heatmap-row {
+      display: grid;
+      grid-template-columns: 210px 1fr 50px;
+      gap: 10px;
+      align-items: center;
+      margin-bottom: 8px;
+      font-size: 13px;
+    }
+
+    .bar-wrap {
+      height: 10px;
+      background: #10151d;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      overflow: hidden;
+    }
+
+    .bar {
+      height: 100%;
+      background: linear-gradient(90deg, #3f8efc, #4cc9f0);
+      width: 0;
+      transition: width 500ms ease;
+    }
+
+    .finding {
+      background: var(--panel-2);
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      margin-bottom: 12px;
+      overflow: hidden;
+    }
+
+    .finding-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+      width: 100%;
+      padding: 14px;
+      border: 0;
+      background: transparent;
+      color: var(--text);
+      cursor: pointer;
+      text-align: left;
+      font-size: 14px;
+    }
+
+    .finding-header:hover { background: rgba(255, 255, 255, 0.03); }
+
+    .finding-body {
+      max-height: 0;
+      overflow: hidden;
+      transition: max-height 350ms ease;
+      border-top: 1px solid transparent;
+    }
+
+    .finding.open .finding-body {
+      max-height: 900px;
+      border-top-color: var(--line);
+      padding: 0 14px 14px;
+    }
+
+    .finding-meta { color: var(--muted); font-size: 12px; }
+    .finding p { margin: 10px 0; }
+
+    ul { margin: 8px 0 0; padding-left: 18px; }
+
+    .footer {
+      margin-top: 18px;
+      color: var(--muted);
+      font-size: 12px;
+      text-align: right;
+    }
+
+    @media (max-width: 900px) {
+      .grid { grid-template-columns: 1fr; }
+      .heatmap-row { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <section class="risk-banner">
+      <h1 class="risk-title">
+        AgentProbe Security Report
+        <span class="pill">Risk {{ report.risk_score }}/10</span>
+      </h1>
+      <p class="risk-meta">{{ report.executive_summary }}</p>
+    </section>
+
+    <section class="grid">
+      <article class="card">
+        <h2>Findings Table</h2>
+        <table>
+          <thead>
+            <tr>
+              <th>ID</th>
+              <th>Title</th>
+              <th>OWASP</th>
+              <th>Severity</th>
+              <th>Score</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for row in finding_rows %}
+            <tr>
+              <td>{{ row.id }}</td>
+              <td>{{ row.title }}</td>
+              <td>{{ row.owasp_category }}</td>
+              <td class="sev-{{ row.severity }}">{{ row.severity|upper }}</td>
+              <td>{{ row.score }}</td>
+            </tr>
+            {% else %}
+            <tr>
+              <td colspan="5">No actionable findings.</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </article>
+
+      <article class="card">
+        <h2>OWASP Heatmap</h2>
+        {% set max_count = (report.owasp_heatmap.values() | max) if report.owasp_heatmap else 1 %}
+        {% for cat, count in report.owasp_heatmap.items() %}
+          {% set width = (count * 100 / max_count) | round(0, 'floor') %}
+          <div class="heatmap-row">
+            <span>{{ cat }}</span>
+            <div class="bar-wrap">
+              <div class="bar" style="width: {{ width }}%"></div>
+            </div>
+            <strong>{{ count }}</strong>
+          </div>
+        {% else %}
+          <p class="finding-meta">No heatmap data available.</p>
+        {% endfor %}
+      </article>
+    </section>
+
+    <section class="card">
+      <h2>Expandable Finding Cards</h2>
+      {% for finding in report.findings %}
+      <article class="finding" id="{{ finding.id }}">
+        <button class="finding-header" onclick="toggleFinding('{{ finding.id }}')">
+          <span>
+            <strong>{{ finding.id }} — {{ finding.title }}</strong><br />
+            <span class="finding-meta">
+              {{ finding.owasp_category }} | {{ finding.attack_type }} | score {{ finding.severity_score }}
+            </span>
+          </span>
+          <span class="sev-{{ finding.severity }}">{{ finding.severity|upper }}</span>
+        </button>
+        <div class="finding-body">
+          <p><strong>Description:</strong> {{ finding.description }}</p>
+          <p><strong>Evidence:</strong> {{ finding.evidence }}</p>
+          <p><strong>Remediation:</strong> {{ finding.remediation }}</p>
+          <p><strong>Reproduction Steps:</strong></p>
+          <ul>
+            {% for step in finding.reproduction_steps %}
+              <li>{{ step }}</li>
+            {% else %}
+              <li>No reproduction steps recorded.</li>
+            {% endfor %}
+          </ul>
+        </div>
+      </article>
+      {% else %}
+      <p class="finding-meta">No findings to display.</p>
+      {% endfor %}
+    </section>
+
+    <p class="footer">
+      Scan timestamp: {{ report.scan_metadata.timestamp }} | Duration: {{ report.scan_metadata.scan_duration_seconds }}s
+    </p>
+  </div>
+
+  <script>
+    function toggleFinding(id) {
+      const card = document.getElementById(id);
+      if (!card) return;
+      card.classList.toggle('open');
+    }
+  </script>
+</body>
+</html>

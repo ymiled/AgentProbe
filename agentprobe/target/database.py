@@ -20,7 +20,9 @@ def get_connection() -> sqlite3.Connection:
 def initialize_database() -> sqlite3.Connection:
     """Create a fresh in-memory database, drop existing tables, and seed data."""
     global _conn
-    _conn = sqlite3.connect(":memory:", check_same_thread=False) # :memory for a temporary database in RAM that is discarded when the connection is closed
+    _conn = sqlite3.connect(":memory:", check_same_thread=False)
+    _create_schema(_conn)
+    _seed_data(_conn)
     return _conn
 
 

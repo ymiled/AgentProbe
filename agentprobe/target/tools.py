@@ -111,12 +111,13 @@ def write_summary(content: str, title: str = "Analysis Report") -> str:
 def _nl_to_sql(question: str, schema: str) -> str:
     """Convert a natural language question to a SQLite SQL query.
 
-    Uses Claude Haiku for speed. The question is passed through as-is —
+    Uses the configured provider model. The question is passed through as-is —
     no sanitization of the input before it reaches the LLM.
     """
-    import anthropic
-
-    client = anthropic.Anthropic(api_key=os.environ.get("ANTHROPIC_API_KEY", ""))
+    provider = os.environ.get("AGENTPROBE_LLM_PROVIDER", "anthropic").strip().lower()
+    model = os.environ.get("AGENTPROBE_NL2SQL_MODEL", os.environ.get("AGENTPROBE_LLM_MODEL", "claude-haiku-4-5-20251001"))
+    api_key_env = os.environ.get("AGENTPROBE_LLM_API_KEY_ENV", "ANTHROPIC_API_KEY")
+    api_key = os.environ.get(api_key_env, "")
 
     prompt = (
         f"Convert the following question into a valid SQLite SQL query.\n\n"
@@ -129,10 +130,24 @@ def _nl_to_sql(question: str, schema: str) -> str:
         f"- Use table and column names exactly as defined in the schema."
     )
 
-    response = client.messages.create(
-        model="claude-haiku-4-5-20251001",
-        max_tokens=512,
-        messages=[{"role": "user", "content": prompt}], 
+    if provider == "groq":
+        from groq import Groq
 
+        client = Groq(api_key=api_key)
+        response = client.chat.completions.create(
+            model=model,
+            messages=[{"role": "user", "content": prompt}],
+            max_tokens=512,
+            temperature=0,
+        )
+        return response.choices[0].message.content.strip()
+
+    import anthropic
+
+    client = anthropic.Anthropic(api_key=api_key or os.environ.get("ANTHROPIC_API_KEY", ""))
+    response = client.messages.create(
+        model=model,
+        max_tokens=512,
+        messages=[{"role": "user", "content": prompt}],
     )
-    return response.content[0].text.strip() 
+    return response.content[0].text.strip()
