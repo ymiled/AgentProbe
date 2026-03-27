@@ -25,6 +25,7 @@ from agentprobe.swarm import (
     ReconAgent,
     ReporterAgent,
 )
+from agentprobe.a2a import A2ATargetAdapter, A2AClient
 
 __all__ = [
     "__version__",
@@ -43,6 +44,9 @@ __all__ = [
     "EvaluatorAgent",
     "ReporterAgent",
     "AgentProbeOrchestrator",
+    # a2a
+    "A2ATargetAdapter",
+    "A2AClient",
     # models
     "AttackType",
     "OWASPCategory",

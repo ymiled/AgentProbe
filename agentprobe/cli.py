@@ -176,6 +176,41 @@ def demo(output_dir: str, mode: str) -> None:
 
 
 @cli.command()
+@click.option("--host", default="0.0.0.0", show_default=True, help="Interface to bind the A2A server.")
+@click.option("--port", default=8090, type=int, show_default=True)
+@click.option("--config", "config_path", default=None, help="Path to YAML config file.")
+def serve(host: str, port: int, config_path: str | None) -> None:
+    """Start AgentProbe as an A2A evaluator agent server.
+
+    \b
+    AgentBeats (or any A2A client) can then send benchmark tasks to this server.
+    The task message must contain a data part with the competitor agent URL:
+
+        {"competitor_agent_url": "http://my-agent:8080", "attacks": "all"}
+
+    \b
+    Endpoints:
+        GET  /.well-known/agent.json   Agent Card
+        POST /                         JSON-RPC 2.0 (tasks/send, tasks/get, tasks/cancel)
+    """
+    try:
+        import uvicorn
+    except ImportError:
+        raise click.ClickException("uvicorn is required. Run: pip install 'agentprobe[a2a]'")
+
+    from agentprobe.a2a.server import create_app
+
+    base_url = f"http://{host}:{port}"
+    cfg = load_config(config_path)
+    app = create_app(base_url=base_url, config=cfg)
+
+    click.echo(f"AgentProbe evaluator agent listening on {base_url}")
+    click.echo(f"Agent Card : {base_url}/.well-known/agent.json")
+    click.echo("Waiting for benchmark tasks...")
+    uvicorn.run(app, host=host, port=port, log_level="info")
+
+
+@cli.command()
 @click.option("--scan-json", default="output/scan_result.json", show_default=True, help="Path to a scan_result.json file.")
 @click.option("--host", default="127.0.0.1", show_default=True)
 @click.option("--port", default=8501, type=int, show_default=True)

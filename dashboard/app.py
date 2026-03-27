@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pandas as pd
 import plotly.express as px
-import streamlit as st
+import streamlit as st # provides the UI framework for the dashboard
 
 from agentprobe.config import load_config
 from agentprobe.report.generator import ReportGenerator
@@ -34,7 +34,7 @@ def main(default_scan_json: str) -> None:
     st.set_page_config(page_title="AgentProbe Dashboard", layout="wide")
     st.title("AgentProbe Dashboard")
 
-    if "live_events" not in st.session_state:
+    if "live_events" not in st.session_state: 
         st.session_state.live_events = []
 
     st.sidebar.header("Scan Configuration")
