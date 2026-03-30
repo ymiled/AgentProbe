@@ -1,10 +1,10 @@
 # AgentBeats assessment scenario
 
 [green_agent]
-id = "AGENTPROBE_AGENT_ID"   
+id = "019d3d62-4259-7441-9a0c-e983db345ba8"   
 
 [purple_agent]
-id = "COMPETITOR_AGENT_ID"   
+id = "019d3d65-ddc5-7c60-9d64-e5a1ac654e19"   
 
 [environment]
 # Secrets — add these in your GitHub repo Settings > Secrets > Actions
