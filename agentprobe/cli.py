@@ -176,11 +176,21 @@ def demo(output_dir: str, mode: str) -> None:
 
 
 @cli.command()
-@click.option("--host", default="0.0.0.0", show_default=True, help="Interface to bind the A2A server.")
-@click.option("--port", default=8090, type=int, show_default=True)
+@click.option(
+    "--host",
+    default=lambda: os.environ.get("HOST", "0.0.0.0"),
+    show_default="0.0.0.0 (or $HOST)",
+    help="Interface to bind the A2A server.",
+)
+@click.option(
+    "--port",
+    default=lambda: int(os.environ.get("AGENT_PORT", "8090")),
+    type=int,
+    show_default="8090 (or $AGENT_PORT)",
+)
 @click.option("--config", "config_path", default=None, help="Path to YAML config file.")
 def serve(host: str, port: int, config_path: str | None) -> None:
-    """Start AgentProbe as an A2A evaluator agent server.
+    """Start AgentProbe as an A2A 1.0 evaluator agent server.
 
     \b
     AgentBeats (or any A2A client) can then send benchmark tasks to this server.
@@ -190,8 +200,16 @@ def serve(host: str, port: int, config_path: str | None) -> None:
 
     \b
     Endpoints:
-        GET  /.well-known/agent.json   Agent Card
-        POST /                         JSON-RPC 2.0 (tasks/send, tasks/get, tasks/cancel)
+        GET  /.well-known/agent-card.json   Agent Card (A2A 1.0)
+        GET  /.well-known/agent.json        Alias (backward compat)
+        POST /                              JSON-RPC 2.0 (SendMessage, GetTask, ListTasks, CancelTask)
+        POST /reset                         Reset state (AgentBeats controller)
+
+    \b
+    AgentBeats hosting — set env vars before running:
+        export HOST=0.0.0.0
+        export AGENT_PORT=8090
+        agentprobe serve
     """
     try:
         import uvicorn
@@ -204,8 +222,10 @@ def serve(host: str, port: int, config_path: str | None) -> None:
     cfg = load_config(config_path)
     app = create_app(base_url=base_url, config=cfg)
 
-    click.echo(f"AgentProbe evaluator agent listening on {base_url}")
-    click.echo(f"Agent Card : {base_url}/.well-known/agent.json")
+    click.echo(f"AgentProbe A2A 1.0 evaluator agent")
+    click.echo(f"Listening  : {base_url}")
+    click.echo(f"Agent Card : {base_url}/.well-known/agent-card.json")
+    click.echo(f"Reset      : POST {base_url}/reset")
     click.echo("Waiting for benchmark tasks...")
     uvicorn.run(app, host=host, port=port, log_level="info")
 

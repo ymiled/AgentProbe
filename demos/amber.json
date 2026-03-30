@@ -1,0 +1,17 @@
+{
+  "schema_version": "1.0",
+  "name": "AgentProbe Demo Competitor Agent",
+  "description": "Demo competitor agent for AgentProbe. Implements a vulnerable financial analyst agent with intentionally weak tools for benchmarking and attack simulation.",
+  "image": "ghcr.io/ymiled/agentprobe-demo-competitor:latest",
+  "endpoint": "http://localhost:8080",
+  "capabilities": [
+    "Financial analysis",
+    "Document reading",
+    "Database querying (vulnerable)",
+    "Report writing"
+  ],
+  "a2a_protocol": true,
+  "contact": "your@email.com",
+  "homepage": "https://github.com/ymiled/AgentProbe",
+  "license": "MIT"
+}

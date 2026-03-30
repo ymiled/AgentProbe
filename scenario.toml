@@ -1,0 +1,17 @@
+# AgentBeats assessment scenario
+
+[green_agent]
+id = "AGENTPROBE_AGENT_ID"   
+
+[purple_agent]
+id = "COMPETITOR_AGENT_ID"   
+
+[environment]
+# Secrets — add these in your GitHub repo Settings > Secrets > Actions
+ANTHROPIC_API_KEY = { secret = true }      # required by both agents
+
+[config]
+# Passed as a data part to AgentProbe's SendMessage
+competitor_agent_url = "http://purple_agent:${AGENT_PORT}"
+attacks = "all"
+recon_messages = 4

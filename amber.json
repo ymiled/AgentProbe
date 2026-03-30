@@ -1,0 +1,20 @@
+{
+  "schema_version": "1.0",
+  "name": "AgentProbe Evaluator Agent",
+  "description": "Open-source red-teaming framework for AI agent systems. Deploys a multi-agent adversarial swarm to surface real attack surfaces (prompt injection, SQL manipulation, PII exfiltration, system prompt extraction, reasoning hijack). Performs hybrid rule+LLM evaluation and generates OWASP-aligned vulnerability reports.",
+  "image": "ghcr.io/ymiled/agentprobe:latest",
+  "endpoint": "http://localhost:8090",
+  "capabilities": [
+    "Prompt Injection",
+    "SQL Manipulation",
+    "PII Exfiltration",
+    "System Prompt Extraction",
+    "Reasoning Hijack",
+    "Hybrid rule+LLM evaluation",
+    "OWASP-aligned reporting"
+  ],
+  "a2a_protocol": true,
+  "contact": "youssef.miled7@gmail.com",
+  "homepage": "https://github.com/ymiled/AgentProbe",
+  "license": "MIT"
+}

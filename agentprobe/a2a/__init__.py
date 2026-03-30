@@ -23,8 +23,10 @@ from agentprobe.a2a.schemas import (
     A2ATask,
     AgentCard,
     AgentCapabilities,
+    AgentProvider,
     AgentSkill,
     Artifact,
+    AuthScheme,
     DataPart,
     Part,
     TaskStatus,
@@ -45,5 +47,7 @@ __all__ = [
     "A2ATask",
     "AgentCard",
     "AgentCapabilities",
+    "AgentProvider",
     "AgentSkill",
+    "AuthScheme",
 ]

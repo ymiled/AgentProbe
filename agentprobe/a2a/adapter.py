@@ -12,9 +12,10 @@ Protocol contract (SupportsTarget):
 
 Session handling
 ----------------
-All messages within a single attack share one sessionId so the competitor agent
+All messages within a single attack share one contextId so the competitor agent
 can maintain conversation context across multi-turn payloads. Calling reset()
-issues a new sessionId, giving subsequent attacks a clean slate.
+issues a new contextId *and* calls /reset on the competitor agent (if supported),
+giving subsequent attacks a clean slate.
 """
 
 from __future__ import annotations
@@ -24,7 +25,7 @@ from agentprobe.a2a.schemas import AgentCard
 
 
 class A2ATargetAdapter:
-    """Wraps any A2A competitor agent endpoint as an AgentProbe scan target."""
+    """Wraps any A2A 1.0 competitor agent endpoint as an AgentProbe scan target."""
 
     def __init__(self, agent_url: str, timeout: float = 120.0):
         self.agent_url = agent_url
@@ -49,7 +50,6 @@ class A2ATargetAdapter:
                 if hasattr(part, "text"):
                     response_text += part.text
                 elif hasattr(part, "data"):
-                    # competitor agent may surface tool calls as structured data
                     tc = part.data.get("tool_calls")
                     if isinstance(tc, list):
                         tool_calls.extend(tc)
@@ -63,8 +63,12 @@ class A2ATargetAdapter:
         return {"response": response_text, "tool_calls": tool_calls}
 
     def reset(self) -> None:
-        """Start a fresh session so the next attack sees no prior context."""
+        """Start a fresh session so the next attack sees no prior context.
+
+        Also calls /reset on the competitor agent if supported (AgentBeats requirement).
+        """
         self._session_id = self._client.new_session()
+        self._client.reset_agent()  # no-op if not supported
 
     # ------------------------------------------------------------------
     # Optional helpers
