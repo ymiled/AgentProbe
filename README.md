@@ -2,7 +2,34 @@
 
 Open-source red-teaming framework for AI agent systems. AgentProbe deploys a four-agent adversarial swarm against a target agent to surface real attack surface: prompt injection via tool output, SQL manipulation, PII exfiltration, system prompt extraction, and reasoning hijack. The framework then proceeds with hybrid rule+LLM evaluation and structured OWASP-aligned reports.
 
+
+# AgentProbe Leaderboard
+
+This repository tracks the leaderboard for AgentProbe security benchmarks.
+
+## About
+AgentProbe is an open-source red-teaming framework for AI agent systems. It evaluates competitor agents using a multi-agent adversarial swarm and reports vulnerabilities such as prompt injection, SQL manipulation, PII exfiltration, and more.
+
 ## How it works
+- The green agent (AgentProbe) runs security benchmarks against competitor agents.
+- Results (risk scores, findings, etc.) are collected and displayed here.
+- The leaderboard is updated automatically via GitHub Actions or manual submissions.
+
+## Submitting Results
+- Trigger a benchmark via AgentBeats or by pushing a `scenario.toml` file.
+- Results will be parsed and added to the leaderboard.
+
+## View Leaderboard
+[Leaderboard Table Here — customize with your logic or CI output]
+
+## Links
+- [AgentProbe Main Repo](https://github.com/ymiled/AgentProbe)
+- [AgentBeats Platform](https://agentbeats.dev)
+
+---
+
+
+## How AgentProbe works
 
 ```
 Target Agent
@@ -59,84 +86,10 @@ uv pip install -e ".[a2a]"
 agentprobe serve --port 8090
 ```
 
-### Trigger a benchmark from AgentBeats (or any A2A client)
-
-```bash
-curl -X POST http://localhost:8090 \
-  -H "Content-Type: application/json" \
-  -d '{
-    "jsonrpc": "2.0",
-    "id": "1",
-    "method": "tasks/send",
-    "params": {
-      "id": "task-001",
-      "message": {
-        "role": "user",
-        "parts": [{
-          "type": "data",
-          "data": {
-            "competitor_agent_url": "http://my-agent:8080",
-            "attacks": "all",
-            "recon_messages": 4
-          }
-        }]
-      }
-    }
-  }'
-```
-
-Poll for results:
-
-```bash
-curl -X POST http://localhost:8090 \
-  -H "Content-Type: application/json" \
-  -d '{"jsonrpc":"2.0","id":"2","method":"tasks/get","params":{"id":"task-001"}}'
-```
-
-The completed task artifact contains a plain-text summary and a full `vulnerability_report` data part.
 
 
-## Installation
 
-Requires Python 3.10+.
 
-```bash
-git clone https://github.com/ymiled/AgentProbe.git
-cd agentprobe
-uv pip install -e "."          # core
-uv pip install -e ".[a2a]"     # + A2A server (fastapi + uvicorn)
-```
-
-Set your API key (the default config uses Anthropic):
-
-```bash
-# Linux / macOS
-export ANTHROPIC_API_KEY=sk-ant-...
-
-# Windows PowerShell
-$env:ANTHROPIC_API_KEY="sk-ant-..."
-```
-
-## Quick Start
-
-### CLI
-
-```bash
-# Full scan: all 5 attack families, JSON + HTML report in output/
-agentprobe scan
-
-# Quick demo: prompt injection + tool manipulation only
-agentprobe demo
-
-# Limit scope
-agentprobe scan --attacks prompt_injection,data_exfiltration --recon-messages 3
-
-# Fast mode: 1 payload per attack, no adaptive retries
-agentprobe scan --fast
-
-# Launch Streamlit dashboard after a scan
-agentprobe dashboard --scan-json output/scan_result.json
-```
 
 ## Attack Vectors
 
