@@ -2,7 +2,7 @@
   "manifest_version": "0.1.0",
   "program": {
     "image": "ghcr.io/ymiled/agentprobe-demo-competitor:latest",
-    "entrypoint": ["sh", "run.sh"],
+    "entrypoint": ["python", "demos/demo_evaluator_agent.py"],
     "env": {
       "HOST": "0.0.0.0",
       "AGENT_PORT": "8081"
