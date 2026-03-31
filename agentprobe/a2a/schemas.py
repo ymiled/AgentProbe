@@ -5,7 +5,7 @@ Follows the A2A 1.0 specification:
 
 Key types
 ---------
-Part          — atomic content unit (text or structured data)
+Part          — atomic content unit (text, structured data, or file)
 A2AMessage    — a single turn in a task conversation
 TaskStatus    — lifecycle state of a task (submitted → working → completed/failed)
 Artifact      — output produced by the agent
@@ -23,20 +23,36 @@ from pydantic import BaseModel, Field
 
 
 # ---------------------------------------------------------------------------
-# Content parts  (A2A 1.0 uses "kind", not "type")
+# Content parts  (A2A 1.0 uses "kind" discriminator)
 # ---------------------------------------------------------------------------
 
 class TextPart(BaseModel):
     kind: Literal["text"] = "text"
     text: str
+    metadata: dict[str, Any] = {}
 
 
 class DataPart(BaseModel):
     kind: Literal["data"] = "data"
     data: dict[str, Any]
+    metadata: dict[str, Any] = {}
 
 
-Part = Annotated[Union[TextPart, DataPart], Field(discriminator="kind")]
+class FileContent(BaseModel):
+    """Inline or referenced file content."""
+    mimeType: str | None = None
+    # Exactly one of bytes (base64-encoded inline) or uri should be set
+    bytes: str | None = None   # base64-encoded binary data
+    uri: str | None = None     # reference to external file
+
+
+class FilePart(BaseModel):
+    kind: Literal["file"] = "file"
+    file: FileContent
+    metadata: dict[str, Any] = {}
+
+
+Part = Annotated[Union[TextPart, DataPart, FilePart], Field(discriminator="kind")]
 
 
 # ---------------------------------------------------------------------------
@@ -49,6 +65,9 @@ class A2AMessage(BaseModel):
     messageId: str = Field(default_factory=lambda: str(uuid.uuid4()))
     contextId: str | None = None
     taskId: str | None = None
+    metadata: dict[str, Any] = {}
+    extensions: list[str] = []
+    referenceTaskIds: list[str] = []
 
 
 # ---------------------------------------------------------------------------
@@ -57,8 +76,12 @@ class A2AMessage(BaseModel):
 
 TaskState = Literal[
     "submitted", "working", "completed", "failed",
-    "canceled", "input-required", "auth-required",
+    "canceled", "input-required", "auth-required", "rejected",
 ]
+
+TERMINAL_STATES: frozenset[str] = frozenset(
+    {"completed", "failed", "canceled", "rejected"}
+)
 
 
 class TaskStatus(BaseModel):
@@ -74,6 +97,7 @@ class Artifact(BaseModel):
     parts: list[Part]
     index: int = 0
     lastChunk: bool = True
+    append: bool = False
 
 
 class A2ATask(BaseModel):
@@ -96,10 +120,37 @@ class AgentProvider(BaseModel):
     support_contact: str | None = None
 
 
+class AgentInterface(BaseModel):
+    """A single protocol binding (endpoint) for an agent."""
+    protocol: Literal["jsonrpc", "grpc", "rest"] = "jsonrpc"
+    url: str
+
+
+class SecurityScheme(BaseModel):
+    """OpenAPI-aligned security scheme descriptor."""
+    type: Literal["apiKey", "http", "oauth2", "openIdConnect", "mtls", "none"]
+    description: str | None = None
+    # http scheme fields
+    scheme: str | None = None          # e.g. "bearer", "basic"
+    bearerFormat: str | None = None
+    # apiKey fields
+    name: str | None = None
+    in_: str | None = Field(None, alias="in")
+    # oauth2 fields
+    tokenUrl: str | None = None
+    scopes: dict[str, str] = {}
+    # openIdConnect
+    openIdConnectUrl: str | None = None
+
+    class Config:
+        populate_by_name = True
+
+
+# Keep AuthScheme as a backward-compatible alias used by existing server code
 class AuthScheme(BaseModel):
     scheme: Literal["apiKey", "oauth2", "bearer", "basic", "none"]
     description: str | None = None
-    tokenUrl: str | None = None   # required for oauth2
+    tokenUrl: str | None = None
     scopes: list[str] = []
     service_identifier: str | None = None
 
@@ -109,7 +160,8 @@ class AgentCapabilities(BaseModel):
     streaming: bool = False
     pushNotifications: bool = False
     stateTransitionHistory: bool = True
-    supportedMessageParts: list[str] = ["text", "data"]
+    extendedAgentCard: bool = False
+    supportedMessageParts: list[str] = ["text", "data", "file"]
 
 
 class AgentSkill(BaseModel):
@@ -130,15 +182,20 @@ class AgentCard(BaseModel):
     agentVersion: str                 # semver of this agent build
     name: str
     description: str
-    url: str
+    url: str                          # primary endpoint URL (convenience, mirrors interfaces[0].url)
+    interfaces: list[AgentInterface] = []  # A2A 1.0: supported protocol bindings
     provider: AgentProvider
     capabilities: AgentCapabilities = Field(default_factory=AgentCapabilities)
+    # A2A 1.0: map of scheme-name → SecurityScheme
+    securitySchemes: dict[str, SecurityScheme] = {}
+    # Backward-compat list used by existing server/client code
     authSchemes: list[AuthScheme] = Field(
         default_factory=lambda: [AuthScheme(scheme="none")]
     )
     skills: list[AgentSkill] = []
-    defaultInputModes: list[str] = ["text", "data"]
-    defaultOutputModes: list[str] = ["text", "data"]
+    defaultInputModes: list[str] = ["text", "data", "file"]
+    defaultOutputModes: list[str] = ["text", "data", "file"]
     tags: list[str] = []
     documentationUrl: str | None = None
+    iconUrl: str | None = None
     lastUpdated: str | None = None

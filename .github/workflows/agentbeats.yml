@@ -1,0 +1,29 @@
+name: AgentBeats Match
+
+on:
+  repository_dispatch:
+    types: [agentbeats]
+  workflow_dispatch:
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install AgentProbe + earthshaker
+        run: pip install -e ".[a2a]" earthshaker
+
+      - name: Run AgentBeats scenario
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: earthshaker run_ctrl

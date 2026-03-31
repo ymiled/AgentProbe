@@ -16,9 +16,18 @@ All messages within a single attack share one contextId so the competitor agent
 can maintain conversation context across multi-turn payloads. Calling reset()
 issues a new contextId *and* calls /reset on the competitor agent (if supported),
 giving subsequent attacks a clean slate.
+
+Polling
+-------
+A2A tasks may be asynchronous. The client polls until the task reaches a
+terminal state (completed/failed/canceled/rejected) before returning, so
+invoke() always delivers a fully-resolved response regardless of whether the
+target agent processes requests synchronously or asynchronously.
 """
 
 from __future__ import annotations
+
+import base64
 
 from agentprobe.a2a.client import A2AClient
 from agentprobe.a2a.schemas import AgentCard
@@ -38,13 +47,17 @@ class A2ATargetAdapter:
     # ------------------------------------------------------------------
 
     def invoke(self, message: str) -> dict:
-        """Send a message to the competitor agent and return a normalised response dict."""
+        """Send a message to the competitor agent and return a normalised response dict.
+
+        Blocks until the task reaches a terminal state (the client polls
+        internally when the task comes back as submitted/working).
+        """
         task = self._client.send_task(message, session_id=self._session_id)
 
         response_text = ""
         tool_calls: list[dict] = []
 
-        # Primary source: task artifacts
+        # Primary source: task artifacts (completed tasks carry results here)
         for artifact in task.artifacts:
             for part in artifact.parts:
                 if hasattr(part, "text"):
@@ -53,12 +66,29 @@ class A2ATargetAdapter:
                     tc = part.data.get("tool_calls")
                     if isinstance(tc, list):
                         tool_calls.extend(tc)
+                elif hasattr(part, "file"):
+                    # Decode inline file bytes as text when possible
+                    fc = part.file
+                    if fc.bytes:
+                        try:
+                            response_text += base64.b64decode(fc.bytes).decode("utf-8", errors="replace")
+                        except Exception:
+                            pass
+                    elif fc.uri:
+                        response_text += f"[file: {fc.uri}]"
 
         # Fallback: status message (some agents embed the reply there)
         if not response_text and task.status.message:
             for part in task.status.message.parts:
                 if hasattr(part, "text"):
                     response_text += part.text
+                elif hasattr(part, "file"):
+                    fc = part.file
+                    if fc.bytes:
+                        try:
+                            response_text += base64.b64decode(fc.bytes).decode("utf-8", errors="replace")
+                        except Exception:
+                            pass
 
         return {"response": response_text, "tool_calls": tool_calls}
 

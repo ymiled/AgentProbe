@@ -12,21 +12,26 @@ POST /reset                         Reset all state (required by AgentBeats cont
 
 Supported JSON-RPC methods (A2A 1.0)
 -------------------------------------
-SendMessage    Start a benchmark. Provide the competitor agent URL in a data part:
-               {"competitor_agent_url": "http://...", "attacks": "all", "recon_messages": 4}
-               Returns the task immediately with state="submitted"; the scan
-               runs in a background thread.
+a2a_sendMessage    Start a benchmark. Provide the competitor agent URL in a data part:
+                   {"competitor_agent_url": "http://...", "attacks": "all", "recon_messages": 4}
+                   Returns the task immediately with state="submitted"; the scan
+                   runs in a background thread.
 
-GetTask        Poll for task status and results by task ID.
+a2a_getTask        Poll for task status and results by task ID.
+                   Supports optional historyLength param to limit returned history.
 
-ListTasks      Returns all tasks with pagination metadata.
+a2a_listTasks      Returns tasks with optional contextId/status filtering and pagination.
 
-CancelTask     Mark a task as canceled (best-effort; running scan is not interrupted).
+a2a_cancelTask     Mark a task as canceled (best-effort; running scan is not interrupted).
+
+Legacy PascalCase aliases (SendMessage, GetTask, ListTasks, CancelTask) and
+pre-1.0 REST-style names (tasks/send, tasks/get, tasks/cancel) are also
+accepted for backward compatibility with older clients.
 
 Task lifecycle
 --------------
   submitted -> working -> completed
-                       \-> failed
+                       \\-> failed
 
 The completed artifact contains:
   - TextPart  : human-readable scan summary
@@ -57,9 +62,11 @@ from fastapi.responses import JSONResponse
 
 from agentprobe.a2a.adapter import A2ATargetAdapter
 from agentprobe.a2a.schemas import (
+    A2AMessage,
     A2ATask,
     AgentCapabilities,
     AgentCard,
+    AgentInterface,
     AgentProvider,
     AgentSkill,
     Artifact,
@@ -81,6 +88,12 @@ _ERR_UNSUPPORTED_OPERATION = -32503
 _ERR_INVALID_PARAMS = -32602
 _ERR_PARSE_ERROR = -32700
 
+# Method name aliases: both A2A 1.0 (a2a_ prefix) and legacy PascalCase / REST names
+_METHOD_SEND = {"a2a_sendMessage", "SendMessage", "tasks/send"}
+_METHOD_GET = {"a2a_getTask", "GetTask", "tasks/get"}
+_METHOD_LIST = {"a2a_listTasks", "ListTasks"}
+_METHOD_CANCEL = {"a2a_cancelTask", "CancelTask", "tasks/cancel"}
+
 
 # ---------------------------------------------------------------------------
 # Agent Card
@@ -99,6 +112,7 @@ def build_agent_card(base_url: str) -> AgentCard:
             "OWASP-aligned vulnerability reports with CVSS-like severity scores."
         ),
         url=base_url,
+        interfaces=[AgentInterface(protocol="jsonrpc", url=base_url)],
         provider=AgentProvider(
             name="AgentProbe",
             url="https://github.com/your-org/agentprobe",
@@ -109,7 +123,8 @@ def build_agent_card(base_url: str) -> AgentCard:
             streaming=False,
             pushNotifications=False,
             stateTransitionHistory=True,
-            supportedMessageParts=["text", "data"],
+            extendedAgentCard=False,
+            supportedMessageParts=["text", "data", "file"],
         ),
         authSchemes=[AuthScheme(scheme="none")],
         skills=[
@@ -190,6 +205,27 @@ def _extract_scan_config(params: dict) -> dict:
     )
 
 
+def _build_user_message(params: dict, context_id: str, task_id: str) -> A2AMessage:
+    """Reconstruct the inbound user A2AMessage from raw JSON-RPC params."""
+    raw = params.get("message", {})
+    parts_raw = raw.get("parts", [])
+    from agentprobe.a2a.schemas import TextPart as TP, DataPart as DP
+    parts = []
+    for p in parts_raw:
+        kind = p.get("kind") or p.get("type")
+        if kind == "data":
+            parts.append(DP(data=p.get("data", {})))
+        else:
+            parts.append(TP(text=p.get("text", "")))
+    return A2AMessage(
+        role="user",
+        parts=parts,
+        messageId=raw.get("messageId", str(uuid.uuid4())),
+        contextId=context_id,
+        taskId=task_id,
+    )
+
+
 # ---------------------------------------------------------------------------
 # Background scan runner
 # ---------------------------------------------------------------------------
@@ -243,18 +279,32 @@ def _run_scan(
             ],
         )
 
+        agent_reply = A2AMessage(
+            role="agent",
+            parts=[TextPart(text=summary)],
+            taskId=task_id,
+        )
+
         with lock:
             if task_id in store:
                 store[task_id].status = TaskStatus(state="completed")
                 store[task_id].artifacts = [artifact]
+                store[task_id].history.append(agent_reply)
 
     except Exception as exc:
+        error_text = f"Scan failed: {exc}"
+        agent_reply = A2AMessage(
+            role="agent",
+            parts=[TextPart(text=error_text)],
+            taskId=task_id,
+        )
         with lock:
             if task_id in store:
                 store[task_id].status = TaskStatus(state="failed")
                 store[task_id].artifacts = [
-                    Artifact(parts=[TextPart(text=f"Scan failed: {exc}")])
+                    Artifact(parts=[TextPart(text=error_text)])
                 ]
+                store[task_id].history.append(agent_reply)
 
 
 # ---------------------------------------------------------------------------
@@ -329,8 +379,8 @@ def create_app(base_url: str = "http://localhost:8090", config: dict | None = No
         method = body.get("method", "")
         params = body.get("params", {})
 
-        # ---- SendMessage (A2A 1.0) / tasks/send (legacy) ---------------
-        if method in ("SendMessage", "tasks/send"):
+        # ---- SendMessage -----------------------------------------------
+        if method in _METHOD_SEND:
             try:
                 scan_config = _extract_scan_config(params)
             except ValueError as exc:
@@ -346,6 +396,10 @@ def create_app(base_url: str = "http://localhost:8090", config: dict | None = No
 
             task = A2ATask(id=task_id, contextId=context_id, sessionId=context_id)
 
+            # Record inbound user message in history
+            user_msg = _build_user_message(params, context_id, task_id)
+            task.history.append(user_msg)
+
             with _lock:
                 _store[task_id] = task
 
@@ -360,9 +414,11 @@ def create_app(base_url: str = "http://localhost:8090", config: dict | None = No
                 "result": task.model_dump(mode="json"),
             })
 
-        # ---- GetTask (A2A 1.0) / tasks/get (legacy) --------------------
-        elif method in ("GetTask", "tasks/get"):
+        # ---- GetTask ---------------------------------------------------
+        elif method in _METHOD_GET:
             task_id = params.get("id", "")
+            history_length: int | None = params.get("historyLength")
+
             with _lock:
                 task = _store.get(task_id)
             if task is None:
@@ -373,27 +429,58 @@ def create_app(base_url: str = "http://localhost:8090", config: dict | None = No
                         "message": f"Task '{task_id}' not found",
                     },
                 })
+
+            task_dict = task.model_dump(mode="json")
+            # Trim history to requested length (most-recent N entries)
+            if history_length is not None and history_length >= 0:
+                task_dict["history"] = task_dict["history"][-history_length:]
+
             return JSONResponse({
                 "jsonrpc": "2.0", "id": rpc_id,
-                "result": task.model_dump(mode="json"),
+                "result": task_dict,
             })
 
-        # ---- ListTasks (A2A 1.0) ----------------------------------------
-        elif method == "ListTasks":
+        # ---- ListTasks -------------------------------------------------
+        elif method in _METHOD_LIST:
+            filter_context: str | None = params.get("contextId")
+            filter_status: str | None = params.get("status")
+            page_size: int = int(params.get("pageSize") or 50)
+            page_token: str = params.get("pageToken") or ""
+            history_length: int | None = params.get("historyLength")
+
             with _lock:
-                tasks = [t.model_dump(mode="json") for t in _store.values()]
+                all_tasks = list(_store.values())
+
+            # Apply filters
+            if filter_context:
+                all_tasks = [t for t in all_tasks if t.contextId == filter_context]
+            if filter_status:
+                all_tasks = [t for t in all_tasks if t.status.state == filter_status]
+
+            # Simple offset-based pagination via numeric page token
+            offset = int(page_token) if page_token.isdigit() else 0
+            page = all_tasks[offset: offset + page_size]
+            next_offset = offset + len(page)
+            next_token = str(next_offset) if next_offset < len(all_tasks) else ""
+
+            def _task_dict(t: A2ATask) -> dict:
+                d = t.model_dump(mode="json")
+                if history_length is not None and history_length >= 0:
+                    d["history"] = d["history"][-history_length:]
+                return d
+
             return JSONResponse({
                 "jsonrpc": "2.0", "id": rpc_id,
                 "result": {
-                    "tasks": tasks,
-                    "nextPageToken": "",
-                    "pageSize": len(tasks),
-                    "totalSize": len(tasks),
+                    "tasks": [_task_dict(t) for t in page],
+                    "nextPageToken": next_token,
+                    "pageSize": len(page),
+                    "totalSize": len(all_tasks),
                 },
             })
 
-        # ---- CancelTask (A2A 1.0) / tasks/cancel (legacy) --------------
-        elif method in ("CancelTask", "tasks/cancel"):
+        # ---- CancelTask ------------------------------------------------
+        elif method in _METHOD_CANCEL:
             task_id = params.get("id", "")
             with _lock:
                 task = _store.get(task_id)
@@ -405,7 +492,7 @@ def create_app(base_url: str = "http://localhost:8090", config: dict | None = No
                         "message": f"Task '{task_id}' not found",
                     },
                 })
-            terminal = {"completed", "failed", "canceled"}
+            terminal = {"completed", "failed", "canceled", "rejected"}
             if task.status.state in terminal:
                 return JSONResponse({
                     "jsonrpc": "2.0", "id": rpc_id,
@@ -416,9 +503,11 @@ def create_app(base_url: str = "http://localhost:8090", config: dict | None = No
                 })
             with _lock:
                 _store[task_id].status = TaskStatus(state="canceled")
+            with _lock:
+                task_dict = _store[task_id].model_dump(mode="json")
             return JSONResponse({
                 "jsonrpc": "2.0", "id": rpc_id,
-                "result": {"id": task_id, "status": {"state": "canceled"}},
+                "result": task_dict,
             })
 
         # ---- unsupported method ----------------------------------------
