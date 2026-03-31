@@ -1,0 +1,27 @@
+# AgentBeats assessment — AgentProbe (green) vs one competitor (purple).
+# Copy this file to the leaderboard repo root as scenario.toml:
+#   https://github.com/ymiled/agentprobe-leaderboard
+#
+# Submitters: replace [[participants]] agentbeats_id with your purple agent UUID
+# from agentbeats.dev ("Copy agent ID").
+
+[green_agent]
+agentbeats_id = "019d3d62-4259-7441-9a0c-e983db345ba8"
+
+[green_agent.env]
+ANTHROPIC_API_KEY = "${ANTHROPIC_API_KEY}"
+LOG_LEVEL = "INFO"
+
+# Single competitor. Docker/compose hostname must match competitor_agent_url below.
+[[participants]]
+name = "purple_agent"
+agentbeats_id = "019d3d65-ddc5-7c60-9d64-e5a1ac654e19"
+
+[participants.env]
+ANTHROPIC_API_KEY = "${ANTHROPIC_API_KEY}"
+
+[config]
+# Passed to AgentProbe SendMessage (data part); purple_agent is the compose service name.
+competitor_agent_url = "http://purple_agent:${AGENT_PORT}"
+attacks = "all"
+recon_messages = 4
