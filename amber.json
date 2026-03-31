@@ -5,7 +5,8 @@
     "entrypoint": ["sh", "run.sh"],
     "env": {
       "HOST": "0.0.0.0",
-      "AGENT_PORT": "8090"
+      "AGENT_PORT": "8090",
+      "AMBER_HINT_PROXY": "${slots.proxy}"
     },
     "network": {
       "endpoints": [

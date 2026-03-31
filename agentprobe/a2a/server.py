@@ -181,6 +181,7 @@ def _extract_scan_config(params: dict) -> dict:
     Priority:
       1. data part  -> {"competitor_agent_url": "...", "attacks": "all", ...}
       2. text part  -> first HTTP/HTTPS URL is used as competitor_agent_url
+      3. env vars   -> PROXY_URL or COMPETITOR_AGENT_URL (injected by amber router)
     """
     message = params.get("message", {})
     parts = message.get("parts", [])
@@ -190,8 +191,16 @@ def _extract_scan_config(params: dict) -> dict:
         part_kind = part.get("kind") or part.get("type")
         if part_kind == "data":
             cfg = part.get("data", {})
+            # Direct config: {"competitor_agent_url": "..."}
             if "competitor_agent_url" in cfg:
                 return cfg
+            # AgentBeats gateway format: {"participants": {"agent": "url"}, "config": {...}}
+            participants = cfg.get("participants", {})
+            agent_url = participants.get("agent") or participants.get("purple1")
+            if agent_url:
+                result = dict(cfg.get("config", {}))
+                result["competitor_agent_url"] = str(agent_url)
+                return result
 
     for part in parts:
         part_kind = part.get("kind") or part.get("type")
@@ -199,6 +208,17 @@ def _extract_scan_config(params: dict) -> dict:
             urls = re.findall(r"https?://\S+", part.get("text", ""))
             if urls:
                 return {"competitor_agent_url": urls[0]}
+
+    # Fallback: amber proxy slot injects competitor URL as PROXY_URL env var.
+    # Config values are injected as ATTACKS, RECON_MESSAGES, PAYLOADS_PER_ATTACK.
+    proxy_url = os.environ.get("PROXY_URL") or os.environ.get("COMPETITOR_AGENT_URL")
+    if proxy_url:
+        return {
+            "competitor_agent_url": proxy_url,
+            "attacks": os.environ.get("ATTACKS", "all"),
+            "recon_messages": int(os.environ.get("RECON_MESSAGES", "3")),
+            "payloads_per_attack": int(os.environ.get("PAYLOADS_PER_ATTACK", "1")),
+        }
 
     raise ValueError(
         "competitor_agent_url not found. "
