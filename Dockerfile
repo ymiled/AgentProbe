@@ -13,6 +13,7 @@ RUN pip install --no-cache-dir uv
 COPY pyproject.toml .
 COPY agentprobe/ agentprobe/
 COPY agentprobe.yaml .
+COPY run.sh .
 
 # Install with A2A server extras
 RUN uv pip install --system -e ".[a2a]"
