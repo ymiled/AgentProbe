@@ -10,8 +10,6 @@ from typing import Any
 import click
 
 from agentprobe.config import load_config
-from agentprobe.report.generator import ReportGenerator
-from agentprobe.swarm.orchestrator import AgentProbeOrchestrator
 
 
 def _parse_attacks(value: str) -> list[str] | str:
@@ -91,6 +89,9 @@ def scan(
     if defense:
         click.echo("[warn] Defense flag is enabled in config, but runtime defense interception is Phase 6.")
 
+    from agentprobe.report.generator import ReportGenerator
+    from agentprobe.swarm.orchestrator import AgentProbeOrchestrator
+
     click.echo(f"Running scan in '{mode}' mode...")
     if fast:
         click.echo("Fast mode enabled: payloads_per_attack=1, adaptive_retries=false")
@@ -164,6 +165,9 @@ def demo(output_dir: str, mode: str) -> None:
         os.environ["AGENTPROBE_LLM_PROVIDER"] = str(llm_cfg.get("provider", "anthropic"))
         os.environ["AGENTPROBE_LLM_MODEL"] = str(llm_cfg.get("model", "claude-haiku-4-5-20251001"))
         os.environ["AGENTPROBE_LLM_API_KEY_ENV"] = str(llm_cfg.get("api_key_env", "ANTHROPIC_API_KEY"))
+
+    from agentprobe.report.generator import ReportGenerator
+    from agentprobe.swarm.orchestrator import AgentProbeOrchestrator
 
     click.echo("Running demo scan...")
     orchestrator = AgentProbeOrchestrator(config=cfg)

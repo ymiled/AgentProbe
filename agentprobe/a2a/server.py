@@ -60,7 +60,6 @@ from typing import Any
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
-from agentprobe.a2a.adapter import A2ATargetAdapter
 from agentprobe.a2a.schemas import (
     A2AMessage,
     A2ATask,
@@ -77,8 +76,6 @@ from agentprobe.a2a.schemas import (
     TextPart,
 )
 from agentprobe.config import load_config
-from agentprobe.report.generator import ReportGenerator
-from agentprobe.swarm.orchestrator import AgentProbeOrchestrator
 
 # ---------------------------------------------------------------------------
 # A2A 1.0 error codes
@@ -247,6 +244,11 @@ def _run_scan(
     lock: threading.Lock,
 ) -> None:
     """Execute the full AgentProbe scan and update the task store on completion."""
+    # Heavy imports deferred here so the FastAPI server starts without delay.
+    from agentprobe.a2a.adapter import A2ATargetAdapter
+    from agentprobe.report.generator import ReportGenerator
+    from agentprobe.swarm.orchestrator import AgentProbeOrchestrator
+
     try:
         with lock:
             if task_id in store:
