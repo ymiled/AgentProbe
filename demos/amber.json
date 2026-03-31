@@ -19,6 +19,10 @@
   "exports": {
     "a2a": "a2a"
   },
+  "config_schema": {
+    "type": "object",
+    "properties": {}
+  },
   "metadata": {
     "name": "AgentProbe Demo Competitor Agent",
     "description": "A vulnerable financial analyst agent for benchmarking and attack simulation.",

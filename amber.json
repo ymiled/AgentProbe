@@ -22,6 +22,15 @@
   "exports": {
     "a2a": "a2a"
   },
+  "config_schema": {
+    "type": "object",
+    "properties": {
+      "competitor_agent_url": { "type": "string" },
+      "attacks": { "type": "string" },
+      "recon_messages": { "type": "integer" },
+      "payloads_per_attack": { "type": "integer" }
+    }
+  },
   "metadata": {
     "name": "AgentProbe",
     "description": "Security red-team benchmark for AI agents. Runs structured adversarial attacks and returns OWASP-aligned vulnerability reports.",
