@@ -176,9 +176,8 @@ class AgentSkill(BaseModel):
 
 
 class AgentCard(BaseModel):
-    schemaVersion: str = "1.0"
+    version: str                      # semver of this agent build (A2A 1.0 required)
     humanReadableId: str              # e.g. "myorg/agent-name"
-    agentVersion: str                 # semver of this agent build
     name: str
     description: str
     url: str                          # primary endpoint URL (convenience, mirrors interfaces[0].url)

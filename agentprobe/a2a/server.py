@@ -99,9 +99,8 @@ _METHOD_CANCEL = {"a2a_cancelTask", "CancelTask", "tasks/cancel"}
 
 def build_agent_card(base_url: str) -> AgentCard:
     return AgentCard(
-        schemaVersion="1.0",
+        version="0.1.0",
         humanReadableId="agentprobe/security-red-team",
-        agentVersion="0.1.0",
         name="AgentProbe",
         description=(
             "Security red-team benchmark for AI agents. "

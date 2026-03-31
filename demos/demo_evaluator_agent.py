@@ -70,9 +70,8 @@ def _get_or_create_agent(session_id: str) -> TargetAgent:
 # Agent Card  (A2A 1.0 — all required fields present)
 # ---------------------------------------------------------------------------
 AGENT_CARD = AgentCard(
-    schemaVersion="1.0",
+    version="0.1.0",
     humanReadableId="agentprobe/demo-financial-analyst",
-    agentVersion="0.1.0",
     name="Demo Financial Analyst",
     description=(
         "Intentionally vulnerable LangGraph financial analyst agent. "
