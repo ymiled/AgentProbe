@@ -145,8 +145,7 @@ async def jsonrpc(request: Request) -> JSONResponse:
     method = body.get("method", "")
     params = body.get("params", {})
 
-    # Accept both A2A 1.0 (SendMessage) and legacy (tasks/send)
-    if method in ("SendMessage", "tasks/send"):
+    if method in ("a2a_sendMessage", "SendMessage", "tasks/send"):
         message_obj = params.get("message", {})
 
         # Resolve session/context ID
@@ -195,7 +194,7 @@ async def jsonrpc(request: Request) -> JSONResponse:
             "result": task.model_dump(mode="json"),
         })
 
-    elif method in ("GetTask", "tasks/get"):
+    elif method in ("a2a_getTask", "GetTask", "tasks/get"):
         return JSONResponse({
             "jsonrpc": "2.0", "id": rpc_id,
             "error": {"code": -32503, "message": "Task history not stored in this demo server"},

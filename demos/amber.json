@@ -5,11 +5,11 @@
     "entrypoint": ["sh", "run.sh"],
     "env": {
       "HOST": "0.0.0.0",
-      "AGENT_PORT": "8080"
+      "AGENT_PORT": "8081"
     },
     "network": {
       "endpoints": [
-        { "name": "endpoint", "port": 8080 }
+        { "name": "endpoint", "port": 8081 }
       ]
     }
   },
