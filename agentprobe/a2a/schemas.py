@@ -19,7 +19,7 @@ import uuid
 from datetime import datetime
 from typing import Annotated, Any, Literal, Union
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 # ---------------------------------------------------------------------------
@@ -142,8 +142,7 @@ class SecurityScheme(BaseModel):
     # openIdConnect
     openIdConnectUrl: str | None = None
 
-    class Config:
-        populate_by_name = True
+    model_config = ConfigDict(populate_by_name=True)
 
 
 # Keep AuthScheme as a backward-compatible alias used by existing server code

@@ -72,6 +72,7 @@ from agentprobe.a2a.schemas import (
     Artifact,
     AuthScheme,
     DataPart,
+    TERMINAL_STATES,
     TaskStatus,
     TextPart,
 )
@@ -207,23 +208,11 @@ def _extract_scan_config(params: dict) -> dict:
 
 def _build_user_message(params: dict, context_id: str, task_id: str) -> A2AMessage:
     """Reconstruct the inbound user A2AMessage from raw JSON-RPC params."""
-    raw = params.get("message", {})
-    parts_raw = raw.get("parts", [])
-    from agentprobe.a2a.schemas import TextPart as TP, DataPart as DP
-    parts = []
-    for p in parts_raw:
-        kind = p.get("kind") or p.get("type")
-        if kind == "data":
-            parts.append(DP(data=p.get("data", {})))
-        else:
-            parts.append(TP(text=p.get("text", "")))
-    return A2AMessage(
-        role="user",
-        parts=parts,
-        messageId=raw.get("messageId", str(uuid.uuid4())),
-        contextId=context_id,
-        taskId=task_id,
-    )
+    raw = dict(params.get("message", {}))
+    raw.setdefault("role", "user")
+    raw["contextId"] = context_id
+    raw["taskId"] = task_id
+    return A2AMessage.model_validate(raw)
 
 
 # ---------------------------------------------------------------------------
@@ -484,27 +473,24 @@ def create_app(base_url: str = "http://localhost:8090", config: dict | None = No
             task_id = params.get("id", "")
             with _lock:
                 task = _store.get(task_id)
-            if task is None:
-                return JSONResponse({
-                    "jsonrpc": "2.0", "id": rpc_id,
-                    "error": {
-                        "code": _ERR_TASK_NOT_FOUND,
-                        "message": f"Task '{task_id}' not found",
-                    },
-                })
-            terminal = {"completed", "failed", "canceled", "rejected"}
-            if task.status.state in terminal:
-                return JSONResponse({
-                    "jsonrpc": "2.0", "id": rpc_id,
-                    "error": {
-                        "code": _ERR_TASK_NOT_CANCELABLE,
-                        "message": f"Task '{task_id}' is already in terminal state '{task.status.state}'",
-                    },
-                })
-            with _lock:
-                _store[task_id].status = TaskStatus(state="canceled")
-            with _lock:
-                task_dict = _store[task_id].model_dump(mode="json")
+                if task is None:
+                    return JSONResponse({
+                        "jsonrpc": "2.0", "id": rpc_id,
+                        "error": {
+                            "code": _ERR_TASK_NOT_FOUND,
+                            "message": f"Task '{task_id}' not found",
+                        },
+                    })
+                if task.status.state in TERMINAL_STATES:
+                    return JSONResponse({
+                        "jsonrpc": "2.0", "id": rpc_id,
+                        "error": {
+                            "code": _ERR_TASK_NOT_CANCELABLE,
+                            "message": f"Task '{task_id}' is already in terminal state '{task.status.state}'",
+                        },
+                    })
+                task.status = TaskStatus(state="canceled")
+                task_dict = task.model_dump(mode="json")
             return JSONResponse({
                 "jsonrpc": "2.0", "id": rpc_id,
                 "result": task_dict,

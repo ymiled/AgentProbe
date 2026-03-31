@@ -116,38 +116,50 @@ class A2AClient:
         with httpx.Client(timeout=self.timeout) as http:
             body = self._rpc(http, "a2a_sendMessage", params)
 
-        if "error" in body:
-            raise RuntimeError(
-                f"A2A SendMessage error from {self.base_url}: {body['error']}"
-            )
+            if "error" in body:
+                raise RuntimeError(
+                    f"A2A SendMessage error from {self.base_url}: {body['error']}"
+                )
 
-        task = A2ATask.model_validate(body["result"])
+            task = A2ATask.model_validate(body["result"])
 
-        # Poll until the task reaches a terminal state
-        if task.status.state not in TERMINAL_STATES:
-            task = self._poll_until_done(task.id)
+            # Poll until the task reaches a terminal state, reusing the same client
+            if task.status.state not in TERMINAL_STATES:
+                task = self._poll_until_done(task.id, http)
 
         return task
 
-    def _poll_until_done(self, task_id: str) -> A2ATask:
-        """Poll get_task until the task reaches a terminal state or times out."""
+    def _poll_until_done(self, task_id: str, http: httpx.Client) -> A2ATask:
+        """Poll get_task until the task reaches a terminal state or times out.
+
+        Accepts an existing httpx.Client to avoid reopening a connection on
+        every poll iteration.
+        """
         deadline = time.monotonic() + self._POLL_TIMEOUT
+        task: A2ATask | None = None
         while time.monotonic() < deadline:
             time.sleep(self._POLL_INTERVAL)
-            task = self.get_task(task_id)
+            task = self._get_task_with_client(http, task_id)
             if task.status.state in TERMINAL_STATES:
                 return task
-        # Return last known state even if timed out rather than raising
+        # Return last known state even if timed out
+        if task is None:
+            task = self._get_task_with_client(http, task_id)
         return task
 
-    def get_task(self, task_id: str, history_length: int | None = None) -> A2ATask:
-        """Poll for the current state of a task (A2A 1.0: a2a_getTask)."""
+    def _get_task_with_client(self, http: httpx.Client, task_id: str, history_length: int | None = None) -> A2ATask:
         params: dict = {"id": task_id}
         if history_length is not None:
             params["historyLength"] = history_length
+        body = self._rpc(http, "a2a_getTask", params)
+        if "error" in body:
+            raise RuntimeError(f"GetTask error: {body['error']}")
+        return A2ATask.model_validate(body["result"])
 
+    def get_task(self, task_id: str, history_length: int | None = None) -> A2ATask:
+        """Poll for the current state of a task (A2A 1.0: a2a_getTask)."""
         with httpx.Client(timeout=self.timeout) as http:
-            body = self._rpc(http, "a2a_getTask", params)
+            body = self._rpc(http, "a2a_getTask", {"id": task_id, **({"historyLength": history_length} if history_length is not None else {})})
 
         if "error" in body:
             raise RuntimeError(f"GetTask error: {body['error']}")

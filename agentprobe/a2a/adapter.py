@@ -57,7 +57,6 @@ class A2ATargetAdapter:
         response_text = ""
         tool_calls: list[dict] = []
 
-        # Primary source: task artifacts (completed tasks carry results here)
         for artifact in task.artifacts:
             for part in artifact.parts:
                 if hasattr(part, "text"):
@@ -67,15 +66,7 @@ class A2ATargetAdapter:
                     if isinstance(tc, list):
                         tool_calls.extend(tc)
                 elif hasattr(part, "file"):
-                    # Decode inline file bytes as text when possible
-                    fc = part.file
-                    if fc.bytes:
-                        try:
-                            response_text += base64.b64decode(fc.bytes).decode("utf-8", errors="replace")
-                        except Exception:
-                            pass
-                    elif fc.uri:
-                        response_text += f"[file: {fc.uri}]"
+                    response_text += self._decode_file_part(part.file)
 
         # Fallback: status message (some agents embed the reply there)
         if not response_text and task.status.message:
@@ -83,14 +74,21 @@ class A2ATargetAdapter:
                 if hasattr(part, "text"):
                     response_text += part.text
                 elif hasattr(part, "file"):
-                    fc = part.file
-                    if fc.bytes:
-                        try:
-                            response_text += base64.b64decode(fc.bytes).decode("utf-8", errors="replace")
-                        except Exception:
-                            pass
+                    response_text += self._decode_file_part(part.file)
 
         return {"response": response_text, "tool_calls": tool_calls}
+
+    @staticmethod
+    def _decode_file_part(fc) -> str:
+        """Decode a FileContent value to a string for use as response text."""
+        if fc.bytes:
+            try:
+                return base64.b64decode(fc.bytes).decode("utf-8", errors="replace")
+            except Exception:
+                return ""
+        if fc.uri:
+            return f"[file: {fc.uri}]"
+        return ""
 
     def reset(self) -> None:
         """Start a fresh session so the next attack sees no prior context.
