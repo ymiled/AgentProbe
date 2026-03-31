@@ -49,3 +49,6 @@ Thumbs.db
 htmlcov/
 
 uv.lock
+
+web/node_modules/
+web/.next/

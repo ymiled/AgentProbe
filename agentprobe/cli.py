@@ -231,31 +231,24 @@ def serve(host: str, port: int, config_path: str | None) -> None:
 
 
 @cli.command()
-@click.option("--scan-json", default="output/scan_result.json", show_default=True, help="Path to a scan_result.json file.")
 @click.option("--host", default="127.0.0.1", show_default=True)
 @click.option("--port", default=8501, type=int, show_default=True)
-def dashboard(scan_json: str, host: str, port: int) -> None:
-    """Launch Streamlit dashboard."""
-    app_path = Path(__file__).resolve().parents[1] / "dashboard" / "app.py"
-    if not app_path.exists():
-        raise click.ClickException(f"Dashboard app not found at: {app_path}")
-
+def dashboard(host: str, port: int) -> None:
+    """Launch FastAPI dashboard backend."""
     cmd = [
         sys.executable,
         "-m",
-        "streamlit",
-        "run",
-        str(app_path),
-        "--server.address",
+        "uvicorn",
+        "dashboard.app:app",
+        "--host",
         host,
-        "--server.port",
+        "--port",
         str(port),
-        "--",
-        "--scan-json",
-        scan_json,
+        "--log-level",
+        "info",
     ]
 
-    click.echo("Launching dashboard...")
+    click.echo("Launching dashboard backend...")
     click.echo(" ".join(cmd))
     raise SystemExit(subprocess.call(cmd))
 

@@ -1,164 +1,393 @@
 from __future__ import annotations
 
-import argparse
 import json
+import queue
+import threading
+import uuid
+from collections.abc import Callable
+from datetime import datetime
 from pathlib import Path
+from typing import Any
 
-import pandas as pd
-import plotly.express as px
-import streamlit as st # provides the UI framework for the dashboard
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi import HTTPException
+from pydantic import BaseModel, Field
 
 from agentprobe.config import load_config
+from agentprobe.models.schemas import VulnerabilityFinding
 from agentprobe.report.generator import ReportGenerator
 from agentprobe.swarm.orchestrator import AgentProbeOrchestrator
 
 
-def _load_scan_json(path: str) -> dict | None:
-    p = Path(path)
-    if not p.exists():
+class ScanRequest(BaseModel):
+    attacks: str = Field(
+        default="all",
+        description="Comma-separated attack families or 'all'.",
+    )
+    mode: str = Field(
+        default="sequential",
+        description="Scan mode: sequential or swarm.",
+        pattern="^(sequential|swarm)$",
+    )
+    recon_messages: int = Field(
+        default=3,
+        ge=1,
+        le=10,
+        description="Number of recon probe turns.",
+    )
+    output_dir: str = Field(
+        default="output",
+        description="Base directory to store scan artifacts under <output_dir>/<scanId>/",
+    )
+
+
+def _parse_attacks(attacks: str) -> str | list[str]:
+    raw = (attacks or "").strip()
+    if not raw or raw.lower() == "all":
+        return "all"
+    return [item.strip() for item in raw.split(",") if item.strip()]
+
+
+def _as_jsonable(obj: Any) -> Any:
+    """Convert common non-JSON types used by AgentProbe models."""
+    if obj is None:
         return None
-    return json.loads(p.read_text(encoding="utf-8"))
+    if isinstance(obj, (str, int, float, bool)):
+        return obj
+    if isinstance(obj, datetime):
+        return obj.isoformat()
+    # Pydantic models (and our Enum values) provide `model_dump(mode="json")`.
+    dump = getattr(obj, "model_dump", None)
+    if callable(dump):
+        return obj.model_dump(mode="json")
+    value = getattr(obj, "value", None)
+    if isinstance(value, str):
+        return value
+    return str(obj)
 
 
-def _severity_color(sev: str) -> str:
-    mapping = {
-        "critical": "#ff5d73",
-        "high": "#ff9f43",
-        "medium": "#ffd166",
-        "low": "#59d185",
-    }
-    return mapping.get(sev.lower(), "#9aa6b2")
+def _findings_preview(findings: list[VulnerabilityFinding], limit: int = 15) -> list[dict[str, Any]]:
+    out: list[dict[str, Any]] = []
+    for f in findings[:limit]:
+        out.append(
+            {
+                "id": f.id,
+                "title": f.title,
+                "owasp_category": _as_jsonable(f.owasp_category),
+                "severity": _as_jsonable(f.severity),
+                "severity_score": float(f.severity_score),
+                "attack_type": _as_jsonable(f.attack_type),
+                "evidence": f.evidence[:300],
+            }
+        )
+    return out
 
 
-def main(default_scan_json: str) -> None:
-    st.set_page_config(page_title="AgentProbe Dashboard", layout="wide")
-    st.title("AgentProbe Dashboard")
+# -----------------------------------------------------------------------------
+# App + in-memory scan state
+# -----------------------------------------------------------------------------
 
-    if "live_events" not in st.session_state: 
-        st.session_state.live_events = []
+app = FastAPI(
+    title="AgentProbe Dashboard API",
+    description="Next.js/React dashboard backend for live AgentProbe scans.",
+    version="0.1.0",
+)
 
-    st.sidebar.header("Scan Configuration")
-    attacks = st.sidebar.text_input("Attacks", value="all")
-    mode = st.sidebar.selectbox("Mode", options=["sequential", "swarm"], index=0)
-    recon_messages = st.sidebar.slider("Recon messages", min_value=3, max_value=5, value=3)
-    output_dir = st.sidebar.text_input("Output directory", value="output")
-    scan_json_path = st.sidebar.text_input("Scan JSON path", value=default_scan_json)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # local dev friendly; tighten in production
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
-    run_btn = st.sidebar.button("Run Scan")
+_scan_queues: dict[str, queue.Queue[dict[str, Any]]] = {}
+_scan_state: dict[str, dict[str, Any]] = {}
+_scan_cancel_flags: dict[str, threading.Event] = {}
+_scan_lock = threading.Lock()
 
-    scan_data = _load_scan_json(scan_json_path)
 
-    if run_btn:
-        st.session_state.live_events = []
+def _run_scan(
+    scan_id: str,
+    cfg: dict[str, Any],
+    mode: str,
+    attacks: str | list[str],
+    scan_output_dir: Path,
+) -> None:
+    """Run scan in a background thread and push events into the scan queue."""
+    q = _scan_queues.get(scan_id)
+    if q is None:
+        return
 
-        def callback(evt: dict) -> None:
-            st.session_state.live_events.append(evt)
+    cancel_flag = _scan_cancel_flags.get(scan_id)
+    if cancel_flag is None:
+        return
 
-        cfg = load_config()
-        cfg["scan"]["mode"] = mode
-        cfg["scan"]["attacks"] = "all" if attacks.strip().lower() == "all" else [a.strip() for a in attacks.split(",") if a.strip()]
-        cfg["scan"]["recon_messages"] = int(recon_messages)
-        cfg["output"]["directory"] = output_dir
+    def callback(evt: dict) -> None:
+        if cancel_flag.is_set():
+            raise RuntimeError("Scan canceled by user")
+        # Orchestrator emits serializable dicts; attach scanId for convenience.
+        evt_out = {"scanId": scan_id, **evt}
+        q.put(evt_out)
 
-        with st.spinner("Running scan..."):
-            orchestrator = AgentProbeOrchestrator(config=cfg, callback=callback)
-            result = orchestrator.scan(mode=mode, attacks=cfg["scan"]["attacks"])
-            reporter = ReportGenerator()
-            reporter.generate(result, output_dir=output_dir)
+    try:
+        orchestrator = AgentProbeOrchestrator(config=cfg, callback=callback)
+        scan_result = orchestrator.scan(mode=mode, attacks=attacks)
 
-            scan_result_path = Path(output_dir) / "scan_result.json"
-            scan_result_path.write_text(json.dumps(result.model_dump(mode="json"), indent=2), encoding="utf-8")
-            scan_json_path = str(scan_result_path)
-            scan_data = result.model_dump(mode="json")
+        # Build (in-memory) report summary for immediate UI charts.
+        reporter = ReportGenerator()
+        vulnerability_report = reporter.build_vulnerability_report(scan_result)
 
-        st.sidebar.success(f"Scan complete. Saved to {scan_json_path}")
+        # Persist artifacts to disk for the UI to load after completion.
+        scan_result_path = scan_output_dir / "scan_result.json"
+        scan_result_path.write_text(
+            json.dumps(scan_result.model_dump(mode="json"), indent=2),
+            encoding="utf-8",
+        )
 
-    tabs = st.tabs(["Live Attack Feed", "Charts", "Report"])
+        report_json_path = scan_output_dir / "report.json"
+        reporter.generate_json(
+            scan_result,
+            report=vulnerability_report,
+            output_path=str(report_json_path),
+        )
 
-    with tabs[0]:
-        st.subheader("Live Attack Feed")
-        if st.session_state.live_events:
-            for evt in reversed(st.session_state.live_events[-200:]):
-                event_type = evt.get("event", "unknown")
-                color = "#4cc9f0"
-                if event_type.startswith("attack"):
-                    color = "#ff9f43"
-                elif event_type.startswith("recon"):
-                    color = "#59d185"
-                elif event_type.startswith("target"):
-                    color = "#ffd166"
-                elif event_type.startswith("scan"):
-                    color = "#4cc9f0"
+        report_html_path = scan_output_dir / "report.html"
+        reporter.generate_html(
+            scan_result,
+            report=vulnerability_report,
+            output_path=str(report_html_path),
+        )
 
-                st.markdown(
-                    f"<div style='padding:8px;border-left:4px solid {color};margin-bottom:8px;background:#10151d;'>"
-                    f"<strong>{event_type}</strong>"
-                    f"<pre style='white-space:pre-wrap;margin:6px 0 0 0;'>{json.dumps(evt, indent=2)}</pre>"
-                    f"</div>",
-                    unsafe_allow_html=True,
-                )
-        else:
-            st.info("No live events yet. Run a scan from the sidebar.")
+        # Prepare a final payload the UI can rely on.
+        severity_counts: dict[str, int] = {"critical": 0, "high": 0, "medium": 0, "low": 0}
+        for r in scan_result.attack_results:
+            sev = _as_jsonable(r.severity)
+            if sev in severity_counts:
+                severity_counts[sev] += 1
 
-    with tabs[1]:
-        st.subheader("Scan Charts")
-        if not scan_data:
-            st.info("No scan data loaded. Provide a scan_result.json path or run a scan.")
-        else:
-            owasp = scan_data.get("owasp_coverage", {})
-            rows = [{"owasp": k, "count": v} for k, v in owasp.items()]
-            if rows:
-                heatmap_df = pd.DataFrame(rows)
-                fig_heatmap = px.bar(heatmap_df, x="owasp", y="count", title="OWASP Heatmap")
-                st.plotly_chart(fig_heatmap, use_container_width=True)
-            else:
-                st.info("No OWASP coverage data.")
+        scan_final = {
+            "scanId": scan_id,
+            "event": "scan_final",
+            "timestamp": datetime.utcnow().isoformat(),
+            "totals": {
+                "total_attacks": int(scan_result.total_attacks),
+                "successful_attacks": int(scan_result.successful_attacks),
+                "blocked_attacks": int(scan_result.blocked_attacks),
+                "attack_success_rate": float(scan_result.attack_success_rate),
+                "attack_success_rate_with_defense": float(scan_result.attack_success_rate_with_defense),
+            },
+            "risk_score": float(vulnerability_report.risk_score),
+            "owasp_coverage": {str(k): int(v) for k, v in scan_result.owasp_coverage.items()},
+            "severity_distribution": severity_counts,
+            "findings_preview": _findings_preview(vulnerability_report.findings),
+            "scan_duration_seconds": float(scan_result.scan_duration_seconds),
+            "artifacts": {
+                "scan_result_json": f"/api/scans/{scan_id}/scan_result.json",
+                "report_json": f"/api/scans/{scan_id}/report.json",
+                "report_html": f"/api/scans/{scan_id}/report.html",
+            },
+        }
 
-            success_rate = float(scan_data.get("attack_success_rate", 0.0))
-            blocked = int(scan_data.get("blocked_attacks", 0))
-            total = int(scan_data.get("total_attacks", 0))
-            fail = max(total - int(scan_data.get("successful_attacks", 0)) - blocked, 0)
+        with _scan_lock:
+            _scan_state[scan_id] = {
+                **_scan_state.get(scan_id, {}),
+                "state": "completed",
+                "risk_score": vulnerability_report.risk_score,
+                "scan_result": scan_result,
+                "vulnerability_report": vulnerability_report,
+                "scan_result_path": str(scan_result_path),
+                "report_json_path": str(report_json_path),
+                "report_html_path": str(report_html_path),
+            }
 
-            status_df = pd.DataFrame(
-                [
-                    {"status": "success", "count": int(scan_data.get("successful_attacks", 0))},
-                    {"status": "blocked", "count": blocked},
-                    {"status": "failed", "count": fail},
-                ]
+        q.put(scan_final)
+        q.put({"scanId": scan_id, "event": "scan_finished", "timestamp": datetime.utcnow().isoformat()})
+
+    except Exception as exc:
+        if str(exc) == "Scan canceled by user":
+            with _scan_lock:
+                _scan_state[scan_id] = {
+                    **_scan_state.get(scan_id, {}),
+                    "state": "canceled",
+                    "error": None,
+                }
+            q.put(
+                {
+                    "scanId": scan_id,
+                    "event": "scan_canceled",
+                    "timestamp": datetime.utcnow().isoformat(),
+                }
             )
-            fig_success = px.pie(status_df, names="status", values="count", title=f"Success Rate: {success_rate:.2%}")
-            st.plotly_chart(fig_success, use_container_width=True)
+            q.put({"scanId": scan_id, "event": "scan_finished", "timestamp": datetime.utcnow().isoformat()})
+            return
 
-            attack_results = scan_data.get("attack_results", [])
-            sev_counts: dict[str, int] = {}
-            for item in attack_results:
-                sev = str(item.get("severity", "low")).lower()
-                sev_counts[sev] = sev_counts.get(sev, 0) + 1
+        with _scan_lock:
+            _scan_state[scan_id] = {
+                **_scan_state.get(scan_id, {}),
+                "state": "failed",
+                "error": str(exc),
+            }
+        q.put(
+            {
+                "scanId": scan_id,
+                "event": "scan_failed",
+                "timestamp": datetime.utcnow().isoformat(),
+                "error": str(exc),
+            }
+        )
 
-            if sev_counts:
-                sev_df = pd.DataFrame([{"severity": k, "count": v} for k, v in sev_counts.items()])
-                fig_sev = px.pie(sev_df, names="severity", values="count", title="Severity Distribution")
-                st.plotly_chart(fig_sev, use_container_width=True)
 
-    with tabs[2]:
-        st.subheader("Rendered Report")
-        html_path = Path(output_dir) / "report.html"
-        json_path = Path(output_dir) / "report.json"
+@app.post("/api/scans")
+async def create_scan(req: ScanRequest) -> dict[str, Any]:
+    attacks = _parse_attacks(req.attacks)
+    cfg = load_config()
+    cfg["scan"]["mode"] = req.mode
+    cfg["scan"]["attacks"] = attacks
+    cfg["scan"]["recon_messages"] = int(req.recon_messages)
 
-        if html_path.exists():
-            html = html_path.read_text(encoding="utf-8")
-            st.components.v1.html(html, height=800, scrolling=True)
-            st.download_button("Download HTML Report", data=html, file_name="report.html", mime="text/html")
-        else:
-            st.info(f"HTML report not found at {html_path}")
+    scan_id = str(uuid.uuid4())
+    scan_output_dir = Path(req.output_dir) / scan_id
+    scan_output_dir.mkdir(parents=True, exist_ok=True)
 
-        if json_path.exists():
-            raw = json_path.read_text(encoding="utf-8")
-            st.download_button("Download JSON Report", data=raw, file_name="report.json", mime="application/json")
+    q: queue.Queue[dict[str, Any]] = queue.Queue()
+    cancel_event = threading.Event()
+    with _scan_lock:
+        _scan_queues[scan_id] = q
+        _scan_cancel_flags[scan_id] = cancel_event
+        _scan_state[scan_id] = {
+            "state": "submitted",
+            "created_at": datetime.utcnow().isoformat(),
+            "output_dir": str(scan_output_dir),
+        }
+
+    thread = threading.Thread(
+        target=_run_scan,
+        args=(scan_id, cfg, req.mode, attacks, scan_output_dir),
+        daemon=True,
+    )
+    thread.start()
+
+    return {"scanId": scan_id, "state": "submitted"}
+
+
+@app.get("/api/scans/{scan_id}")
+async def get_scan_status(scan_id: str) -> dict[str, Any]:
+    with _scan_lock:
+        state = _scan_state.get(scan_id)
+        if state is None:
+            return {"scanId": scan_id, "state": "not_found"}
+        # Return a safe subset (do not leak large in-memory objects).
+        return {
+            "scanId": scan_id,
+            "state": state.get("state"),
+            "risk_score": float(state["risk_score"]) if state.get("risk_score") is not None else None,
+            "output_dir": state.get("output_dir"),
+            "created_at": state.get("created_at"),
+            "error": state.get("error"),
+        }
+
+
+@app.post("/api/scans/{scan_id}/cancel")
+async def cancel_scan(scan_id: str) -> dict[str, Any]:
+    with _scan_lock:
+        st = _scan_state.get(scan_id)
+        flag = _scan_cancel_flags.get(scan_id)
+        if st is None or flag is None:
+            raise HTTPException(status_code=404, detail="Scan not found")
+
+        if st.get("state") in {"completed", "failed", "canceled"}:
+            return {"scanId": scan_id, "state": st.get("state"), "message": "Scan already terminal"}
+
+        flag.set()
+        st["state"] = "canceling"
+        q = _scan_queues.get(scan_id)
+
+    if q is not None:
+        q.put({"scanId": scan_id, "event": "scan_cancel_requested", "timestamp": datetime.utcnow().isoformat()})
+
+    return {"scanId": scan_id, "state": "canceling"}
+
+
+@app.get("/api/scans/{scan_id}/scan_result.json")
+async def get_scan_result(scan_id: str) -> JSONResponse:
+    with _scan_lock:
+        st = _scan_state.get(scan_id)
+        out_dir = st.get("output_dir") if st else None
+    if not out_dir:
+        raise HTTPException(status_code=404, detail="Scan not found")
+    p = Path(out_dir) / "scan_result.json"
+    if not p.exists():
+        raise HTTPException(status_code=404, detail="scan_result.json not found")
+    return JSONResponse(json.loads(p.read_text(encoding="utf-8")))
+
+
+@app.get("/api/scans/{scan_id}/report.json")
+async def get_report_json(scan_id: str) -> JSONResponse:
+    with _scan_lock:
+        st = _scan_state.get(scan_id)
+        out_dir = st.get("output_dir") if st else None
+    if not out_dir:
+        raise HTTPException(status_code=404, detail="Scan not found")
+    p = Path(out_dir) / "report.json"
+    if not p.exists():
+        raise HTTPException(status_code=404, detail="report.json not found")
+    return JSONResponse(json.loads(p.read_text(encoding="utf-8")))
+
+
+@app.get("/api/scans/{scan_id}/report.html", response_class=HTMLResponse)
+async def get_report_html(scan_id: str) -> HTMLResponse:
+    with _scan_lock:
+        st = _scan_state.get(scan_id)
+        out_dir = st.get("output_dir") if st else None
+    if not out_dir:
+        raise HTTPException(status_code=404, detail="Scan not found")
+    p = Path(out_dir) / "report.html"
+    if not p.exists():
+        raise HTTPException(status_code=404, detail="report.html not found")
+    return HTMLResponse(p.read_text(encoding="utf-8"))
+
+
+@app.websocket("/ws/scans/{scan_id}")
+async def ws_scan(websocket: WebSocket, scan_id: str) -> None:
+    await websocket.accept()
+
+    with _scan_lock:
+        q = _scan_queues.get(scan_id)
+        st = _scan_state.get(scan_id)
+        if q is None or st is None:
+            await websocket.close(code=4404)
+            return
+        if st.get("ws_active"):
+            await websocket.close(code=1011)
+            return
+        _scan_state[scan_id]["ws_active"] = True
+
+    loop = __import__("asyncio").get_running_loop()
+    try:
+        while True:
+            # queue.Queue doesn't support await, so we offload to a thread.
+            evt = await loop.run_in_executor(None, q.get)
+            await websocket.send_json(evt)
+            if evt.get("event") in {"scan_finished", "scan_failed", "scan_canceled"}:
+                break
+    except WebSocketDisconnect:
+        # Client disconnected; allow scan to continue.
+        pass
+    finally:
+        with _scan_lock:
+            if scan_id in _scan_state:
+                _scan_state[scan_id]["ws_active"] = False
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(add_help=False)
-    parser.add_argument("--scan-json", default="output/scan_result.json")
-    args, _ = parser.parse_known_args()
-    main(args.scan_json)
+    import uvicorn
+
+    uvicorn.run(
+        "dashboard.app:app",
+        host="0.0.0.0",
+        port=8001,
+        reload=False,
+    )

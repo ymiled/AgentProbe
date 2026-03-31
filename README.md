@@ -2,34 +2,7 @@
 
 Open-source red-teaming framework for AI agent systems. AgentProbe deploys a four-agent adversarial swarm against a target agent to surface real attack surface: prompt injection via tool output, SQL manipulation, PII exfiltration, system prompt extraction, and reasoning hijack. The framework then proceeds with hybrid rule+LLM evaluation and structured OWASP-aligned reports.
 
-
-# AgentProbe Leaderboard
-
-This repository tracks the leaderboard for AgentProbe security benchmarks.
-
-## About
-AgentProbe is an open-source red-teaming framework for AI agent systems. It evaluates competitor agents using a multi-agent adversarial swarm and reports vulnerabilities such as prompt injection, SQL manipulation, PII exfiltration, and more.
-
 ## How it works
-- The green agent (AgentProbe) runs security benchmarks against competitor agents.
-- Results (risk scores, findings, etc.) are collected and displayed here.
-- The leaderboard is updated automatically via GitHub Actions or manual submissions.
-
-## Submitting Results
-- Trigger a benchmark via AgentBeats or by pushing a `scenario.toml` file.
-- Results will be parsed and added to the leaderboard.
-
-## View Leaderboard
-[Leaderboard Table Here — customize with your logic or CI output]
-
-## Links
-- [AgentProbe Main Repo](https://github.com/ymiled/AgentProbe)
-- [AgentBeats Platform](https://agentbeats.dev)
-
----
-
-
-## How AgentProbe works
 
 ```
 Target Agent
@@ -49,6 +22,8 @@ Target Agent
 2. **AttackAgent**: generates targeted `AttackPayload` objects per attack family, informed by the recon profile. Supports adaptive retry on failure.
 3. **EvaluatorAgent**: scores each attack with a hybrid evaluator: deterministic regex rules + Claude Haiku as judge. Resolves disagreements by confidence. Produces `AttackResult` with OWASP category and CVSS-like severity score.
 4. **ReporterAgent**: synthesizes all results into a `VulnerabilityReport` with executive summary, OWASP heatmap, and per-finding reproduction steps.
+
+
 
 ## AAA paradigm — AgentProbe as an evaluator agent
 
@@ -76,19 +51,44 @@ Your Agent
       └── task result (response) ──► EvaluatorAgent ──► VulnerabilityReport
 ```
 
-### Start AgentProbe as an evaluator agent server
+
+
+## Live dashboard
+
+This repo includes a live UI for running scans and streaming attack events in real time.
+
+### Start the dashboard backend
+In one terminal:
 
 ```bash
-# Install A2A server dependencies
 uv pip install -e ".[a2a]"
-
-# Start the server (registers with AgentBeats as a evaluator agent)
-agentprobe serve --port 8090
+agentprobe dashboard --host 127.0.0.1 --port 8001
 ```
 
+Backend endpoints:
+- `POST /api/scans` to start a scan
+- `WS /ws/scans/{scanId}` for live streaming
+- `GET /api/scans/{scanId}/report.html` (and `.json`) once complete
 
+### Start the Next.js frontend
+In another terminal:
 
+```bash
+cd web
+npm install
+NEXT_PUBLIC_API_URL=http://127.0.0.1:8001 npm run dev
+```
 
+Optional explicit websocket URL:
+
+```bash
+cd web
+npm install
+NEXT_PUBLIC_API_URL=http://127.0.0.1:8001 NEXT_PUBLIC_WS_URL=ws://127.0.0.1:8001 npm run dev
+```
+
+### Run a scan
+Open the frontend in your browser, click `Run Scan`, and watch the live feed update.
 
 
 ## Attack Vectors
