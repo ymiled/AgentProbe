@@ -45,6 +45,7 @@ def cli() -> None:
 @click.option("--format", "report_format", type=click.Choice(["json", "html", "both"]), default="both", show_default=True)
 @click.option("--recon-messages", type=int, default=None, help="Override recon probe turns (3-5 recommended).")
 @click.option("--fast", is_flag=True, help="Fast scan mode: disable adaptive retries and limit payloads per attack.")
+@click.option("--target-url", default=None, help="A2A target agent URL to scan (overrides builtin target).")
 def scan(
     config_path: str | None,
     attacks: str,
@@ -54,6 +55,7 @@ def scan(
     report_format: str,
     recon_messages: int | None,
     fast: bool,
+    target_url: str | None,
 ) -> None:
     """Run a red-team scan and write reports."""
     base_cfg = load_config(config_path)
@@ -92,7 +94,15 @@ def scan(
     click.echo(f"Running scan in '{mode}' mode...")
     if fast:
         click.echo("Fast mode enabled: payloads_per_attack=1, adaptive_retries=false")
-    orchestrator = AgentProbeOrchestrator(config=cfg)
+
+    if target_url:
+        from agentprobe.a2a.adapter import A2ATargetAdapter
+        click.echo(f"Target: {target_url}")
+        target = A2ATargetAdapter(target_url)
+    else:
+        target = None
+
+    orchestrator = AgentProbeOrchestrator(config=cfg, target=target)
     scan_result = orchestrator.scan(attacks=cfg["scan"]["attacks"], mode=cfg["scan"]["mode"])
 
     reporter = ReportGenerator()
