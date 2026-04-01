@@ -145,7 +145,7 @@ async def jsonrpc(request: Request) -> JSONResponse:
     method = body.get("method", "")
     params = body.get("params", {})
 
-    if method in ("a2a_sendMessage", "SendMessage", "tasks/send"):
+    if method in ("a2a_sendMessage", "SendMessage", "tasks/send", "message/send"):
         message_obj = params.get("message", {})
 
         # Resolve session/context ID

@@ -111,7 +111,7 @@ def validate_rpc_endpoint(base_url: str, label: str) -> bool:
     payload = {
         "jsonrpc": "2.0",
         "id": str(uuid.uuid4()),
-        "method": "a2a_sendMessage",
+        "method": "message/send",
         "params": {
             "message": {
                 "kind": "message",

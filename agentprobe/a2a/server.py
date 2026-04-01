@@ -87,10 +87,10 @@ _ERR_INVALID_PARAMS = -32602
 _ERR_PARSE_ERROR = -32700
 
 # Method name aliases: both A2A 1.0 (a2a_ prefix) and legacy PascalCase / REST names
-_METHOD_SEND = {"a2a_sendMessage", "SendMessage", "tasks/send"}
-_METHOD_GET = {"a2a_getTask", "GetTask", "tasks/get"}
-_METHOD_LIST = {"a2a_listTasks", "ListTasks"}
-_METHOD_CANCEL = {"a2a_cancelTask", "CancelTask", "tasks/cancel"}
+_METHOD_SEND = {"a2a_sendMessage", "SendMessage", "tasks/send", "message/send"}
+_METHOD_GET = {"a2a_getTask", "GetTask", "tasks/get", "message/get"}
+_METHOD_LIST = {"a2a_listTasks", "ListTasks", "message/list"}
+_METHOD_CANCEL = {"a2a_cancelTask", "CancelTask", "tasks/cancel", "message/cancel"}
 
 
 # ---------------------------------------------------------------------------
