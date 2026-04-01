@@ -5,6 +5,7 @@ on:
     branches: [main]
     paths:
       - "demos/**"
+      - "agentprobe/a2a/**"
       - "pyproject.toml"
   workflow_dispatch:
 

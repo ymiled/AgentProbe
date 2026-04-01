@@ -6,7 +6,10 @@
     "env": {
       "HOST": "0.0.0.0",
       "AGENT_PORT": "8090",
-      "AMBER_HINT_PROXY": "${slots.proxy}"
+      "AMBER_HINT_PROXY": "${slots.proxy}",
+      "ATTACKS": "${config.attacks}",
+      "RECON_MESSAGES": "${config.recon_messages}",
+      "PAYLOADS_PER_ATTACK": "${config.payloads_per_attack}"
     },
     "network": {
       "endpoints": [
@@ -26,7 +29,6 @@
   "config_schema": {
     "type": "object",
     "properties": {
-      "competitor_agent_url": { "type": "string" },
       "attacks": { "type": "string" },
       "recon_messages": { "type": "integer" },
       "payloads_per_attack": { "type": "integer" }
