@@ -1,0 +1,44 @@
+# Local testing — builds both agent images from source without pushing to GHCR.
+#
+# Usage:
+#   docker compose -f docker-compose.local.yml up --build
+#
+# Then in another terminal:
+#   python scripts/validate_gateway.py
+#
+# Or run just one agent:
+#   docker compose -f docker-compose.local.yml up --build green
+#   docker compose -f docker-compose.local.yml up --build purple
+
+services:
+  green:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: agentprobe-green:local
+    environment:
+      HOST: "0.0.0.0"
+      AGENT_PORT: "8090"
+      ANTHROPIC_API_KEY: "${ANTHROPIC_API_KEY:-}"
+      PROXY_URL: "http://purple:8081"
+    ports:
+      - "8090:8090"
+    networks:
+      - agents
+
+  purple:
+    build:
+      context: .
+      dockerfile: demos/Dockerfile
+    image: agentprobe-purple:local
+    environment:
+      HOST: "0.0.0.0"
+      AGENT_PORT: "8081"
+      ANTHROPIC_API_KEY: "${ANTHROPIC_API_KEY:-}"
+    ports:
+      - "8081:8081"
+    networks:
+      - agents
+
+networks:
+  agents:
