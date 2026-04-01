@@ -206,7 +206,7 @@ def agent_card_spec_dict(card: AgentCard) -> dict:
         "skills": skills,
     }
     if card.provider:
-        provider: dict = {"name": card.provider.name}
+        provider: dict = {"organization": card.provider.name}
         if card.provider.url:
             provider["url"] = card.provider.url
         d["provider"] = provider

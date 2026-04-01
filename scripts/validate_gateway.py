@@ -29,13 +29,12 @@ from typing import Any
 
 import httpx
 
-# ---------------------------------------------------------------------------
-# A2A 1.0 AgentCard — required fields per spec
-# ---------------------------------------------------------------------------
-REQUIRED_CARD_FIELDS = ["name", "description", "url", "version", "capabilities", "skills",
-                        "defaultInputModes", "defaultOutputModes"]
-
-REQUIRED_CAPABILITIES = ["streaming", "pushNotifications", "stateTransitionHistory"]
+# Try to import the official a2a-sdk for strict gateway-identical validation
+try:
+    from a2a.types import AgentCard as _SDKAgentCard
+    _SDK_AVAILABLE = True
+except ImportError:
+    _SDK_AVAILABLE = False
 
 
 def _fail(msg: str) -> None:
@@ -78,38 +77,23 @@ def validate_agent_card(base_url: str, label: str) -> tuple[bool, dict]:
         _fail("Could not fetch agent card from either path")
         return False, {}
 
-    # 2. Required top-level fields
-    for field in REQUIRED_CARD_FIELDS:
-        if field in card:
-            val = card[field]
-            _ok(f"Field '{field}' present = {json.dumps(val)[:60]}")
-        else:
-            _fail(f"Missing required field '{field}'")
+    # 2. Parse with the official a2a-sdk — same model the gateway uses
+    if _SDK_AVAILABLE:
+        try:
+            _SDKAgentCard.model_validate(card)
+            _ok("Official a2a-sdk AgentCard.model_validate() PASSED")
+        except Exception as e:
+            _fail(f"Official a2a-sdk parse FAILED: {e}")
             ok = False
+    else:
+        _warn("a2a-sdk not installed — skipping strict SDK parse (run: uv pip install a2a-sdk)")
 
-    # 3. capabilities sub-fields
-    caps = card.get("capabilities", {})
-    if isinstance(caps, dict):
-        for cap in REQUIRED_CAPABILITIES:
-            if cap in caps:
-                _ok(f"capabilities.{cap} = {caps[cap]}")
-            else:
-                _warn(f"capabilities.{cap} not present (optional but expected)")
-
-    # 4. skills non-empty
+    # 3. skills non-empty
     skills = card.get("skills", [])
     if skills:
         _ok(f"{len(skills)} skill(s) declared")
     else:
         _warn("skills array is empty — gateway may reject card")
-
-    # 5. version is a non-empty string
-    version = card.get("version", "")
-    if version and isinstance(version, str):
-        _ok(f"version string = '{version}'")
-    else:
-        _fail(f"version field is empty or missing: {version!r}")
-        ok = False
 
     return ok, card
 
