@@ -199,7 +199,6 @@ def agent_card_spec_dict(card: AgentCard) -> dict:
         "capabilities": {
             "streaming": card.capabilities.streaming,
             "pushNotifications": card.capabilities.pushNotifications,
-            "stateTransitionHistory": card.capabilities.stateTransitionHistory,
         },
         "defaultInputModes": card.defaultInputModes,
         "defaultOutputModes": card.defaultOutputModes,

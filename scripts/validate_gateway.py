@@ -31,7 +31,7 @@ import httpx
 
 # Try to import the official a2a-sdk for strict gateway-identical validation
 try:
-    from a2a.types import AgentCard as _SDKAgentCard
+    from a2a.types import AgentCard as _SDKAgentCard, Task as _SDKTask
     _SDK_AVAILABLE = True
 except ImportError:
     _SDK_AVAILABLE = False
@@ -107,15 +107,22 @@ def validate_rpc_endpoint(base_url: str, label: str) -> bool:
     print(f"\n[{label}] JSON-RPC endpoint — POST {base_url}/")
     ok = True
 
+    # Use SDK-format message (same as gateway sends)
     payload = {
         "jsonrpc": "2.0",
         "id": str(uuid.uuid4()),
         "method": "a2a_sendMessage",
         "params": {
             "message": {
+                "kind": "message",
                 "role": "user",
-                "parts": [{"kind": "text", "text": "ping"}],
+                "parts": [{"kind": "text", "text": "ping", "metadata": None}],
                 "messageId": str(uuid.uuid4()),
+                "contextId": None,
+                "taskId": None,
+                "metadata": None,
+                "extensions": None,
+                "referenceTaskIds": None,
             }
         },
     }
@@ -125,10 +132,17 @@ def validate_rpc_endpoint(base_url: str, label: str) -> bool:
         if "result" in body:
             state = body["result"].get("status", {}).get("state", "?")
             _ok(f"Accepted SendMessage — task state: {state}")
+            # Validate the Task response parses with the SDK
+            if _SDK_AVAILABLE:
+                try:
+                    _SDKTask.model_validate(body["result"])
+                    _ok("Task response parses with a2a-sdk PASSED")
+                except Exception as e:
+                    _fail(f"Task response SDK parse FAILED: {e}")
+                    ok = False
         elif "error" in body:
             code = body["error"].get("code")
             msg = body["error"].get("message", "")
-            # Some errors are expected (e.g. missing competitor URL)
             if code == -32602:
                 _ok(f"Endpoint reachable; expected error -32602: {msg}")
             else:

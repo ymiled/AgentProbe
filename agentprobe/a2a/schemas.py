@@ -29,13 +29,13 @@ from pydantic import BaseModel, ConfigDict, Field
 class TextPart(BaseModel):
     kind: Literal["text"] = "text"
     text: str
-    metadata: dict[str, Any] = {}
+    metadata: dict[str, Any] | None = None
 
 
 class DataPart(BaseModel):
     kind: Literal["data"] = "data"
     data: dict[str, Any]
-    metadata: dict[str, Any] = {}
+    metadata: dict[str, Any] | None = None
 
 
 class FileContent(BaseModel):
@@ -49,7 +49,7 @@ class FileContent(BaseModel):
 class FilePart(BaseModel):
     kind: Literal["file"] = "file"
     file: FileContent
-    metadata: dict[str, Any] = {}
+    metadata: dict[str, Any] | None = None
 
 
 Part = Annotated[Union[TextPart, DataPart, FilePart], Field(discriminator="kind")]
@@ -65,9 +65,9 @@ class A2AMessage(BaseModel):
     messageId: str = Field(default_factory=lambda: str(uuid.uuid4()))
     contextId: str | None = None
     taskId: str | None = None
-    metadata: dict[str, Any] = {}
-    extensions: list[str] = []
-    referenceTaskIds: list[str] = []
+    metadata: dict[str, Any] | None = None
+    extensions: list[str] | None = None
+    referenceTaskIds: list[str] | None = None
 
 
 # ---------------------------------------------------------------------------
