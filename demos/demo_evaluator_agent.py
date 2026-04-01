@@ -1,4 +1,4 @@
-"""Minimal A2A 1.0 server wrapping the demo TargetAgent (financial analyst).
+"""Minimal A2A 1.0 server wrapping the demo TargetAgent (financial analyst).  # noqa: E501
 
 This makes the built-in LangGraph agent reachable over HTTP so it can be
 benchmarked by A2ATargetAdapter or a remote AgentProbe evaluator agent server.
