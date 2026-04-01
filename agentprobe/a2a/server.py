@@ -167,6 +167,60 @@ def build_agent_card(base_url: str) -> AgentCard:
     )
 
 
+def agent_card_spec_dict(card: AgentCard) -> dict:
+    """Return a strict A2A 1.0 spec-compliant dict for the agent card.
+
+    Strips internal-only fields (humanReadableId, interfaces, authSchemes,
+    securitySchemes, provider.support_contact) and null values so the
+    gateway's Pydantic validator (which uses extra='forbid') doesn't reject it.
+    """
+    skills = []
+    for s in card.skills:
+        skill: dict = {
+            "id": s.id,
+            "name": s.name,
+            "description": s.description,
+        }
+        if s.tags:
+            skill["tags"] = s.tags
+        if s.examples:
+            skill["examples"] = s.examples
+        if s.inputModes:
+            skill["inputModes"] = s.inputModes
+        if s.outputModes:
+            skill["outputModes"] = s.outputModes
+        skills.append(skill)
+
+    d: dict = {
+        "name": card.name,
+        "description": card.description,
+        "url": card.url,
+        "version": card.version,
+        "capabilities": {
+            "streaming": card.capabilities.streaming,
+            "pushNotifications": card.capabilities.pushNotifications,
+            "stateTransitionHistory": card.capabilities.stateTransitionHistory,
+        },
+        "defaultInputModes": card.defaultInputModes,
+        "defaultOutputModes": card.defaultOutputModes,
+        "skills": skills,
+    }
+    if card.provider:
+        provider: dict = {"name": card.provider.name}
+        if card.provider.url:
+            provider["url"] = card.provider.url
+        d["provider"] = provider
+    if card.tags:
+        d["tags"] = card.tags
+    if card.documentationUrl:
+        d["documentationUrl"] = card.documentationUrl
+    if card.iconUrl:
+        d["iconUrl"] = card.iconUrl
+    if card.lastUpdated:
+        d["lastUpdated"] = card.lastUpdated
+    return d
+
+
 # ---------------------------------------------------------------------------
 # Helpers — extract scan config from incoming A2A message
 # ---------------------------------------------------------------------------
@@ -353,12 +407,12 @@ def create_app(base_url: str = "http://localhost:8090", config: dict | None = No
     @app.get("/.well-known/agent-card.json", response_class=JSONResponse)
     async def get_agent_card() -> dict:
         """A2A 1.0 Agent Card endpoint."""
-        return agent_card.model_dump()
+        return agent_card_spec_dict(agent_card)
 
     @app.get("/.well-known/agent.json", response_class=JSONResponse)
     async def get_agent_card_legacy() -> dict:
         """Backward-compatible alias for /.well-known/agent-card.json."""
-        return agent_card.model_dump()
+        return agent_card_spec_dict(agent_card)
 
     # ------------------------------------------------------------------
     # Reset endpoint  (required by AgentBeats controller)

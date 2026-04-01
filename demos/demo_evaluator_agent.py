@@ -45,6 +45,7 @@ from agentprobe.a2a.schemas import (
     TaskStatus,
     TextPart,
 )
+from agentprobe.a2a.server import agent_card_spec_dict
 from agentprobe.config import load_config
 from agentprobe.target.financial_agent import TargetAgent
 
@@ -114,13 +115,13 @@ app = FastAPI(title="Demo Competitor Agent (Financial Analyst)")
 @app.get("/.well-known/agent-card.json")
 async def agent_card_v1() -> dict:
     """A2A 1.0 Agent Card endpoint."""
-    return AGENT_CARD.model_dump()
+    return agent_card_spec_dict(AGENT_CARD)
 
 
 @app.get("/.well-known/agent.json")
 async def agent_card_legacy() -> dict:
     """Backward-compatible alias."""
-    return AGENT_CARD.model_dump()
+    return agent_card_spec_dict(AGENT_CARD)
 
 
 @app.post("/reset")
