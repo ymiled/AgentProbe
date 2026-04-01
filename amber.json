@@ -6,10 +6,7 @@
     "env": {
       "HOST": "0.0.0.0",
       "AGENT_PORT": "8090",
-      "AMBER_HINT_PROXY": "${slots.proxy}",
-      "ATTACKS": { "when": "config.attacks", "value": "${config.attacks}" },
-      "RECON_MESSAGES": { "when": "config.recon_messages", "value": "${config.recon_messages}" },
-      "PAYLOADS_PER_ATTACK": { "when": "config.payloads_per_attack", "value": "${config.payloads_per_attack}" }
+      "AMBER_HINT_PROXY": "${slots.proxy}"
     },
     "network": {
       "endpoints": [
@@ -28,11 +25,7 @@
   },
   "config_schema": {
     "type": "object",
-    "properties": {
-      "attacks": { "type": "string" },
-      "recon_messages": { "type": "integer" },
-      "payloads_per_attack": { "type": "integer" }
-    }
+    "properties": {}
   },
   "metadata": {
     "name": "AgentProbe",
