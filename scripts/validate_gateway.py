@@ -132,6 +132,12 @@ def validate_rpc_endpoint(base_url: str, label: str) -> bool:
         if "result" in body:
             state = body["result"].get("status", {}).get("state", "?")
             _ok(f"Accepted SendMessage — task state: {state}")
+            if state == "failed":
+                artifacts = body["result"].get("artifacts", [])
+                if artifacts:
+                    parts = artifacts[0].get("parts", [])
+                    if parts:
+                        _warn(f"Scan error: {parts[0].get('text', '')}")
             # Validate the Task response parses with the SDK
             if _SDK_AVAILABLE:
                 try:

@@ -369,6 +369,9 @@ def _run_scan(
                 store[task_id].history.append(agent_reply)
 
     except Exception as exc:
+        import traceback
+        print(f"[AgentProbe] SCAN ERROR: {exc}", flush=True)
+        traceback.print_exc()
         error_text = f"Scan failed: {exc}"
         agent_reply = A2AMessage(
             role="agent",
