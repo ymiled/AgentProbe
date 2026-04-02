@@ -65,9 +65,9 @@ class A2AClient:
         """
         legacy = {
             "a2a_sendMessage": "SendMessage",
-            "a2a_getTask": "GetTask",
-            "a2a_listTasks": "ListTasks",
-            "a2a_cancelTask": "CancelTask",
+            "tasks/get": "GetTask",
+            "tasks/list": "ListTasks",
+            "tasks/cancel": "CancelTask",
         }
         for attempt_method in (method, legacy.get(method)):
             if attempt_method is None:
@@ -96,7 +96,7 @@ class A2AClient:
         """Send a user message as an A2A task and poll until it reaches a terminal state.
 
         Uses the A2A 1.0 method ``a2a_sendMessage`` (falls back to ``SendMessage``).
-        Polls with ``a2a_getTask`` when the initial response is ``working`` or
+        Polls with ``tasks/get`` when the initial response is ``working`` or
         ``submitted`` so callers always receive a fully-resolved task.
         """
         params: dict = {
@@ -114,7 +114,7 @@ class A2AClient:
             params["message"]["taskId"] = task_id
 
         with httpx.Client(timeout=self.timeout) as http:
-            body = self._rpc(http, "a2a_sendMessage", params)
+            body = self._rpc(http, "message/send", params)
 
             if "error" in body:
                 raise RuntimeError(
@@ -151,15 +151,15 @@ class A2AClient:
         params: dict = {"id": task_id}
         if history_length is not None:
             params["historyLength"] = history_length
-        body = self._rpc(http, "a2a_getTask", params)
+        body = self._rpc(http, "tasks/get", params)
         if "error" in body:
             raise RuntimeError(f"GetTask error: {body['error']}")
         return A2ATask.model_validate(body["result"])
 
     def get_task(self, task_id: str, history_length: int | None = None) -> A2ATask:
-        """Poll for the current state of a task (A2A 1.0: a2a_getTask)."""
+        """Poll for the current state of a task (A2A 1.0: tasks/get)."""
         with httpx.Client(timeout=self.timeout) as http:
-            body = self._rpc(http, "a2a_getTask", {"id": task_id, **({"historyLength": history_length} if history_length is not None else {})})
+            body = self._rpc(http, "tasks/get", {"id": task_id, **({"historyLength": history_length} if history_length is not None else {})})
 
         if "error" in body:
             raise RuntimeError(f"GetTask error: {body['error']}")
@@ -172,7 +172,7 @@ class A2AClient:
         page_size: int | None = None,
         page_token: str | None = None,
     ) -> dict:
-        """List tasks with optional filtering (A2A 1.0: a2a_listTasks).
+        """List tasks with optional filtering (A2A 1.0: tasks/list).
 
         Returns the raw result dict with keys: tasks, nextPageToken, pageSize, totalSize.
         """
@@ -187,18 +187,18 @@ class A2AClient:
             params["pageToken"] = page_token
 
         with httpx.Client(timeout=self.timeout) as http:
-            body = self._rpc(http, "a2a_listTasks", params)
+            body = self._rpc(http, "tasks/list", params)
 
         if "error" in body:
             raise RuntimeError(f"ListTasks error: {body['error']}")
         return body["result"]
 
     def cancel_task(self, task_id: str) -> A2ATask:
-        """Cancel a task by ID (A2A 1.0: a2a_cancelTask)."""
+        """Cancel a task by ID (A2A 1.0: tasks/cancel)."""
         params = {"id": task_id}
 
         with httpx.Client(timeout=self.timeout) as http:
-            body = self._rpc(http, "a2a_cancelTask", params)
+            body = self._rpc(http, "tasks/cancel", params)
 
         if "error" in body:
             raise RuntimeError(f"CancelTask error: {body['error']}")
