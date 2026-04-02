@@ -239,24 +239,8 @@ def _extract_scan_config(params: dict) -> dict:
     # Always log the full params so we can see what the gateway sends
     print(f"[AgentProbe] message/send params: {json.dumps(params)[:1000]}", flush=True)
 
-    amber_proxy = os.environ.get("AMBER_HINT_PROXY")
-    if amber_proxy:
-        print(f"[AgentProbe] AMBER_HINT_PROXY raw: {amber_proxy!r}", flush=True)
-        # Extract the first http(s) URL from whatever amber injects
-        url_match = re.search(r"https?://[^\s\"',>]+", amber_proxy)
-        if url_match:
-            amber_proxy = url_match.group(0)
-        else:
-            amber_proxy = amber_proxy.strip("\"' ")
-            if not amber_proxy.startswith(("http://", "https://")):
-                amber_proxy = "http://" + amber_proxy
-        print(f"[AgentProbe] AMBER_HINT_PROXY resolved: {amber_proxy!r}", flush=True)
-        return {
-            "competitor_agent_url": amber_proxy,
-            "attacks": os.environ.get("ATTACKS", "all"),
-            "recon_messages": int(os.environ.get("RECON_MESSAGES", "1")),
-            "payloads_per_attack": int(os.environ.get("PAYLOADS_PER_ATTACK", "1")),
-        }
+    if os.environ.get("AMBER_HINT_PROXY"):
+        print(f"[AgentProbe] AMBER_HINT_PROXY raw: {os.environ['AMBER_HINT_PROXY']!r} (ignored — using params)", flush=True)
 
     message = params.get("message", {})
     parts = message.get("parts", [])
@@ -280,9 +264,24 @@ def _extract_scan_config(params: dict) -> dict:
     for part in parts:
         part_kind = part.get("kind") or part.get("type")
         if part_kind == "text":
-            # Stop at characters that are never valid unencoded in a URL but
-            # commonly appear immediately after URLs embedded in JSON or prose.
-            urls = re.findall(r"https?://[^\s\"'>{}\[\](),;]+", part.get("text", ""))
+            text = part.get("text", "")
+            # Gateway sends JSON-encoded text like: {"participants": {"agent": "url"}, "config": {}}
+            try:
+                parsed = json.loads(text)
+                participants = parsed.get("participants", {})
+                agent_url = participants.get("agent") or participants.get("purple1")
+                if agent_url:
+                    result = dict(parsed.get("config", {}))
+                    result["competitor_agent_url"] = str(agent_url)
+                    result.setdefault("attacks", os.environ.get("ATTACKS", "all"))
+                    result.setdefault("recon_messages", int(os.environ.get("RECON_MESSAGES", "1")))
+                    result.setdefault("payloads_per_attack", int(os.environ.get("PAYLOADS_PER_ATTACK", "1")))
+                    print(f"[AgentProbe] competitor URL from params: {agent_url!r}", flush=True)
+                    return result
+            except (json.JSONDecodeError, KeyError):
+                pass
+            # Fallback: extract first URL from text
+            urls = re.findall(r"https?://[^\s\"'>{}\[\](),;]+", text)
             if urls:
                 return {"competitor_agent_url": urls[0]}
 
