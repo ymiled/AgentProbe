@@ -49,6 +49,7 @@ Or use the provided run.sh at the repo root.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import os
 import re
@@ -240,7 +241,7 @@ def _extract_scan_config(params: dict) -> dict:
         return {
             "competitor_agent_url": amber_proxy,
             "attacks": os.environ.get("ATTACKS", "all"),
-            "recon_messages": int(os.environ.get("RECON_MESSAGES", "3")),
+            "recon_messages": int(os.environ.get("RECON_MESSAGES", "1")),
             "payloads_per_attack": int(os.environ.get("PAYLOADS_PER_ATTACK", "1")),
         }
 
@@ -412,6 +413,24 @@ def create_app(base_url: str = "http://localhost:8090", config: dict | None = No
         version="0.1.0",
     )
 
+    @app.on_event("startup")
+    async def _warmup_imports() -> None:
+        """Pre-load heavy dependencies in a background thread at server startup.
+
+        The gateway's readiness poll gives us ~85 s before the first real
+        request arrives.  Warming imports here means the first scan request
+        won't pay the cold-import penalty (~30-60 s) during the HTTP call.
+        """
+        def _do_warmup() -> None:
+            try:
+                from agentprobe.a2a.adapter import A2ATargetAdapter        # noqa: F401
+                from agentprobe.report.generator import ReportGenerator    # noqa: F401
+                from agentprobe.swarm.orchestrator import AgentProbeOrchestrator  # noqa: F401
+            except Exception:
+                pass  # warmup failure is non-fatal
+        loop = asyncio.get_event_loop()
+        loop.run_in_executor(None, _do_warmup)
+
     # ------------------------------------------------------------------
     # Agent Card endpoints
     # ------------------------------------------------------------------
@@ -479,15 +498,20 @@ def create_app(base_url: str = "http://localhost:8090", config: dict | None = No
             with _lock:
                 _store[task_id] = task
 
-            threading.Thread(
-                target=_run_scan,
-                args=(task_id, scan_config, ap_config, _store, _lock),
-                daemon=True,
-            ).start()
+            # Run scan synchronously so the response already contains the
+            # final state (completed/failed).  The gateway reads status from
+            # the message/send response body — it does not poll afterwards.
+            loop = asyncio.get_event_loop()
+            await loop.run_in_executor(
+                None, _run_scan, task_id, scan_config, ap_config, _store, _lock
+            )
+
+            with _lock:
+                finished_task = _store.get(task_id, task)
 
             return JSONResponse({
                 "jsonrpc": "2.0", "id": rpc_id,
-                "result": task.model_dump(mode="json"),
+                "result": finished_task.model_dump(mode="json"),
             })
 
         # ---- GetTask ---------------------------------------------------
