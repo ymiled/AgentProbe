@@ -5,7 +5,8 @@
     "entrypoint": ["python", "demos/demo_evaluator_agent.py"],
     "env": {
       "HOST": "0.0.0.0",
-      "AGENT_PORT": "8081"
+      "AGENT_PORT": "8081",
+      "ANTHROPIC_API_KEY": "${config.anthropic_api_key}"
     },
     "network": {
       "endpoints": [
@@ -21,7 +22,14 @@
   },
   "config_schema": {
     "type": "object",
-    "properties": {}
+    "properties": {
+      "anthropic_api_key": {
+        "type": "string",
+        "secret": true,
+        "default": ""
+      }
+    },
+    "required": []
   },
   "metadata": {
     "name": "AgentProbe Demo Competitor Agent",
