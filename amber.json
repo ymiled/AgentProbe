@@ -6,7 +6,8 @@
     "env": {
       "HOST": "0.0.0.0",
       "AGENT_PORT": "8090",
-      "AMBER_HINT_PROXY": "${slots.proxy}"
+      "AMBER_HINT_PROXY": "${slots.proxy}",
+      "ANTHROPIC_API_KEY": "${config.anthropic_api_key}"
     },
     "network": {
       "endpoints": [
@@ -25,7 +26,14 @@
   },
   "config_schema": {
     "type": "object",
-    "properties": {}
+    "properties": {
+      "anthropic_api_key": {
+        "type": "string",
+        "secret": true,
+        "default": ""
+      }
+    },
+    "required": []
   },
   "metadata": {
     "name": "AgentProbe",
