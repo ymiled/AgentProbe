@@ -228,10 +228,22 @@ def _extract_scan_config(params: dict) -> dict:
     """Pull scan settings out of a SendMessage params dict.
 
     Priority:
-      1. data part  -> {"competitor_agent_url": "...", "attacks": "all", ...}
-      2. text part  -> first HTTP/HTTPS URL is used as competitor_agent_url
-      3. env vars   -> PROXY_URL or COMPETITOR_AGENT_URL (injected by amber router)
+      1. AMBER_HINT_PROXY env var (amber deployment — proxy IS the competitor endpoint)
+      2. data part  -> {"competitor_agent_url": "...", "attacks": "all", ...}
+      3. text part  -> first HTTP/HTTPS URL is used as competitor_agent_url
+      4. env vars   -> PROXY_URL or COMPETITOR_AGENT_URL
     """
+    # In amber deployments AMBER_HINT_PROXY is injected and is the proxy that
+    # routes directly to the competitor agent — use it first.
+    amber_proxy = os.environ.get("AMBER_HINT_PROXY")
+    if amber_proxy:
+        return {
+            "competitor_agent_url": amber_proxy,
+            "attacks": os.environ.get("ATTACKS", "all"),
+            "recon_messages": int(os.environ.get("RECON_MESSAGES", "3")),
+            "payloads_per_attack": int(os.environ.get("PAYLOADS_PER_ATTACK", "1")),
+        }
+
     message = params.get("message", {})
     parts = message.get("parts", [])
 
@@ -254,12 +266,13 @@ def _extract_scan_config(params: dict) -> dict:
     for part in parts:
         part_kind = part.get("kind") or part.get("type")
         if part_kind == "text":
-            urls = re.findall(r"https?://\S+", part.get("text", ""))
+            # Stop at characters that are never valid unencoded in a URL but
+            # commonly appear immediately after URLs embedded in JSON or prose.
+            urls = re.findall(r"https?://[^\s\"'>{}\[\](),;]+", part.get("text", ""))
             if urls:
                 return {"competitor_agent_url": urls[0]}
 
-    # Fallback: amber proxy slot injects competitor URL as PROXY_URL env var.
-    # Config values are injected as ATTACKS, RECON_MESSAGES, PAYLOADS_PER_ATTACK.
+    # Fallback: explicit env var overrides
     proxy_url = os.environ.get("PROXY_URL") or os.environ.get("COMPETITOR_AGENT_URL")
     if proxy_url:
         return {
