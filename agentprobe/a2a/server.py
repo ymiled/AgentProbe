@@ -238,6 +238,7 @@ def _extract_scan_config(params: dict) -> dict:
     # routes directly to the competitor agent — use it first.
     amber_proxy = os.environ.get("AMBER_HINT_PROXY")
     if amber_proxy:
+        amber_proxy = amber_proxy.strip("\"' ")
         if not amber_proxy.startswith(("http://", "https://")):
             amber_proxy = "http://" + amber_proxy
         return {
