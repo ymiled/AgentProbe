@@ -238,9 +238,17 @@ def _extract_scan_config(params: dict) -> dict:
     # routes directly to the competitor agent — use it first.
     amber_proxy = os.environ.get("AMBER_HINT_PROXY")
     if amber_proxy:
-        amber_proxy = amber_proxy.strip("\"' ")
-        if not amber_proxy.startswith(("http://", "https://")):
-            amber_proxy = "http://" + amber_proxy
+        print(f"[AgentProbe] AMBER_HINT_PROXY raw: {amber_proxy!r}", flush=True)
+        # Extract the first http(s) URL from whatever amber injects
+        # (handles bare host:port, quoted URLs, comma-separated lists, etc.)
+        url_match = re.search(r"https?://[^\s\"',>]+", amber_proxy)
+        if url_match:
+            amber_proxy = url_match.group(0)
+        else:
+            amber_proxy = amber_proxy.strip("\"' ")
+            if not amber_proxy.startswith(("http://", "https://")):
+                amber_proxy = "http://" + amber_proxy
+        print(f"[AgentProbe] AMBER_HINT_PROXY resolved: {amber_proxy!r}", flush=True)
         return {
             "competitor_agent_url": amber_proxy,
             "attacks": os.environ.get("ATTACKS", "all"),
