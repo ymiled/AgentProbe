@@ -236,11 +236,13 @@ def _extract_scan_config(params: dict) -> dict:
     """
     # In amber deployments AMBER_HINT_PROXY is injected and is the proxy that
     # routes directly to the competitor agent — use it first.
+    # Always log the full params so we can see what the gateway sends
+    print(f"[AgentProbe] message/send params: {json.dumps(params)[:1000]}", flush=True)
+
     amber_proxy = os.environ.get("AMBER_HINT_PROXY")
     if amber_proxy:
         print(f"[AgentProbe] AMBER_HINT_PROXY raw: {amber_proxy!r}", flush=True)
         # Extract the first http(s) URL from whatever amber injects
-        # (handles bare host:port, quoted URLs, comma-separated lists, etc.)
         url_match = re.search(r"https?://[^\s\"',>]+", amber_proxy)
         if url_match:
             amber_proxy = url_match.group(0)
