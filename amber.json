@@ -6,7 +6,8 @@
     "env": {
       "HOST": "0.0.0.0",
       "AGENT_PORT": "8090",
-      "AMBER_HINT_PROXY": "${slots.proxy}"
+      "AMBER_HINT_PROXY": "${slots.proxy}",
+      "ANTHROPIC_API_KEY": "${config.ANTHROPIC_API_KEY}"
     },
     "network": {
       "endpoints": [
@@ -25,7 +26,13 @@
   },
   "config_schema": {
     "type": "object",
-    "properties": {}
+    "properties": {
+      "ANTHROPIC_API_KEY": {
+        "type": "string",
+        "description": "Anthropic API key for LLM-based attack generation"
+      }
+    },
+    "required": ["ANTHROPIC_API_KEY"]
   },
   "metadata": {
     "name": "AgentProbe",
