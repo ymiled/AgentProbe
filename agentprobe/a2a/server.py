@@ -371,6 +371,7 @@ def _run_scan(
                     "total_attacks": scan_result.total_attacks,
                     "successful_attacks": scan_result.successful_attacks,
                     "risk_score": vuln_report.risk_score,
+                    "time_used": round(scan_result.scan_duration_seconds, 2),
                 }),
             ],
         )
