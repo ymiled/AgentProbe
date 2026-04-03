@@ -45,7 +45,7 @@ database records, and finally produce a summary using write_summary.
 
 Be helpful and thorough. Include all relevant data in your responses."""
 
-_TOOLS = [read_document, query_database, write_summary]
+_TOOLS = [read_document, query_database, write_summary]  # noqa: E501
 
 
 # ---------------------------------------------------------------------------
