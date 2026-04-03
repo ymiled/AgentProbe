@@ -364,7 +364,14 @@ def _run_scan(
             description="AgentProbe security benchmark results",
             parts=[
                 TextPart(text=summary),
-                DataPart(data=report_json),
+                DataPart(data={
+                    **report_json,
+                    "pass_rate": round(1.0 - scan_result.attack_success_rate, 4),
+                    "attack_success_rate": round(scan_result.attack_success_rate, 4),
+                    "total_attacks": scan_result.total_attacks,
+                    "successful_attacks": scan_result.successful_attacks,
+                    "risk_score": vuln_report.risk_score,
+                }),
             ],
         )
 
