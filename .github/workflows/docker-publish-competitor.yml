@@ -6,6 +6,7 @@ on:
     paths:
       - "demos/**"
       - "agentprobe/a2a/**"
+      - "agentprobe/target/**"
       - "pyproject.toml"
   workflow_dispatch:
 
