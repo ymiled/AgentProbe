@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import concurrent.futures
+import threading
 import time
 from collections.abc import Callable
 from datetime import datetime
@@ -31,9 +33,11 @@ class AgentProbeOrchestrator:
         target: SupportsTarget | None = None,
         config: dict[str, Any] | None = None,
         callback: Callable[[dict], None] | None = None,
+        target_factory: Callable[[], SupportsTarget] | None = None,
     ):
         self.config = self._merge_with_defaults(config or {})
         self.callback = callback
+        self._emit_lock = threading.Lock()
 
         self.recon_agent = ReconAgent()
         self.attack_agent = AttackAgent()
@@ -42,26 +46,30 @@ class AgentProbeOrchestrator:
 
         self.target = target or self._build_default_target(self.config)
 
+        # Resolve the factory used by swarm workers to obtain isolated target instances.
+        # Priority: explicit factory > default target (create fresh per worker) > custom target
+        # (no factory → swarm mode falls back to sequential with a warning).
+        if target_factory is not None:
+            self._target_factory: Callable[[], SupportsTarget] | None = target_factory
+        elif target is None:
+            # Default TargetAgent — safe to construct fresh instances per worker.
+            cfg = self.config
+            self._target_factory = lambda: self._build_default_target(cfg)
+        else:
+            # Custom target provided without a factory: cannot guarantee thread safety.
+            # Swarm mode will warn and fall back to sequential.
+            self._target_factory = None
+
     def scan(
         self,
         attacks: list[str] | str | None = None,
         mode: str | None = None,
     ) -> ScanResult:
-        """Run the full pipeline and return ScanResult.
-
-        Defaults to sequential mode. Swarm mode is optional and currently falls back
-        to sequential with callback logs if AG2 group-chat runtime is not available.
-        """
+        """Run the full pipeline and return ScanResult."""
         scan_start = time.time()
         mode = mode or self.config["scan"].get("mode", "sequential")
 
         self._emit("scan_started", mode=mode)
-
-        if mode == "swarm":
-            self._emit(
-                "swarm_mode_requested",
-                message="Swarm mode requested; executing reliable sequential pipeline fallback.",
-            )
 
         attack_filter = attacks if attacks is not None else self.config["scan"].get("attacks", "all")
         reset_between = bool(self.config["target"].get("reset_between_attacks", True))
@@ -84,47 +92,21 @@ class AgentProbeOrchestrator:
         )
         self._emit("attack_plan_ready", total_payloads=len(plan))
 
-        attack_results: list[AttackResult] = []
-
-        for attack, payload in plan:
-            if reset_between and hasattr(self.target, "reset"):
-                self.target.reset()
-
-            self._emit(
-                "attack_started",
-                attack_type=attack.attack_type.value,
-                strategy=payload.strategy_name,
-            )
-
-            first_response = self._execute_payload(payload)
-            first_result = self.evaluator_agent.evaluate(attack, payload, first_response)
-            attack_results.append(first_result)
-            self._emit(
-                "attack_evaluated",
-                strategy=payload.strategy_name,
-                outcome=first_result.outcome.value,
-                severity=first_result.severity.value,
-                score=first_result.severity_score,
-            )
-
-            adapted = None
-            if adaptive_retries:
-                adapted = self.attack_agent.adapt_payload_on_failure(payload, first_response, first_result)
-            if adapted is not None:
-                if reset_between and hasattr(self.target, "reset"):
-                    self.target.reset()
-                self._emit("attack_adapted", original=payload.strategy_name, adapted=adapted.strategy_name)
-
-                adapted_response = self._execute_payload(adapted)
-                adapted_result = self.evaluator_agent.evaluate(attack, adapted, adapted_response)
-                attack_results.append(adapted_result)
+        if mode == "swarm":
+            if self._target_factory is None:
                 self._emit(
-                    "attack_evaluated",
-                    strategy=adapted.strategy_name,
-                    outcome=adapted_result.outcome.value,
-                    severity=adapted_result.severity.value,
-                    score=adapted_result.severity_score,
+                    "swarm_fallback",
+                    message=(
+                        "Swarm mode requires a target_factory when using a custom target. "
+                        "Falling back to sequential."
+                    ),
                 )
+                attack_results = self._sequential_scan(plan, reset_between, adaptive_retries)
+            else:
+                max_workers = int(self.config["scan"].get("max_workers", 8))
+                attack_results = self._swarm_scan(plan, reset_between, adaptive_retries, max_workers)
+        else:
+            attack_results = self._sequential_scan(plan, reset_between, adaptive_retries)
 
         total_attacks = len(attack_results)
         successful_attacks = sum(1 for r in attack_results if r.outcome in {AttackOutcome.SUCCESS, AttackOutcome.PARTIAL})
@@ -162,19 +144,110 @@ class AgentProbeOrchestrator:
 
         return scan_result
 
-    def _execute_payload(self, payload: AttackPayload) -> str:
+    # ------------------------------------------------------------------
+    # Scan execution strategies
+    # ------------------------------------------------------------------
+
+    def _sequential_scan(
+        self,
+        plan: list[tuple],
+        reset_between: bool,
+        adaptive_retries: bool,
+    ) -> list[AttackResult]:
+        results: list[AttackResult] = []
+        for attack, payload in plan:
+            results.extend(self._run_single_attack(attack, payload, self.target, reset_between, adaptive_retries))
+        return results
+
+    def _swarm_scan(
+        self,
+        plan: list[tuple],
+        reset_between: bool,
+        adaptive_retries: bool,
+        max_workers: int,
+    ) -> list[AttackResult]:
+        """Execute attacks concurrently; each worker gets its own target instance."""
+        workers = min(len(plan), max_workers)
+        all_results: list[AttackResult] = []
+
+        def run_one(pair: tuple) -> list[AttackResult]:
+            attack, payload = pair
+            target = self._target_factory()  # type: ignore[misc]
+            return self._run_single_attack(attack, payload, target, reset_between, adaptive_retries)
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as pool:
+            futures = [pool.submit(run_one, pair) for pair in plan]
+            for future in concurrent.futures.as_completed(futures):
+                all_results.extend(future.result())
+
+        return all_results
+
+    def _run_single_attack(
+        self,
+        attack: Any,
+        payload: AttackPayload,
+        target: SupportsTarget,
+        reset_between: bool,
+        adaptive_retries: bool,
+    ) -> list[AttackResult]:
+        if reset_between and hasattr(target, "reset"):
+            target.reset()
+
+        self._emit(
+            "attack_started",
+            attack_type=attack.attack_type.value,
+            strategy=payload.strategy_name,
+        )
+
+        first_response = self._execute_payload(payload, target)
+        first_result = self.evaluator_agent.evaluate(attack, payload, first_response)
+        self._emit(
+            "attack_evaluated",
+            strategy=payload.strategy_name,
+            outcome=first_result.outcome.value,
+            severity=first_result.severity.value,
+            score=first_result.severity_score,
+        )
+
+        results = [first_result]
+
+        if adaptive_retries:
+            adapted = self.attack_agent.adapt_payload_on_failure(payload, first_response, first_result)
+            if adapted is not None:
+                if reset_between and hasattr(target, "reset"):
+                    target.reset()
+                self._emit("attack_adapted", original=payload.strategy_name, adapted=adapted.strategy_name)
+
+                adapted_response = self._execute_payload(adapted, target)
+                adapted_result = self.evaluator_agent.evaluate(attack, adapted, adapted_response)
+                results.append(adapted_result)
+                self._emit(
+                    "attack_evaluated",
+                    strategy=adapted.strategy_name,
+                    outcome=adapted_result.outcome.value,
+                    severity=adapted_result.severity.value,
+                    score=adapted_result.severity_score,
+                )
+
+        return results
+
+    # ------------------------------------------------------------------
+    # Target I/O helpers
+    # ------------------------------------------------------------------
+
+    def _execute_payload(self, payload: AttackPayload, target: SupportsTarget) -> str:
         """Run all messages in a payload sequentially; return final target response."""
         response = ""
         for message in payload.messages:
             content = str(message.get("content", ""))
-            result = self._run_target(content)
+            result = self._run_target(content, target)
             response = str(result.get("response", ""))
         return response
 
-    def _run_target(self, message: str) -> dict:
-        """Proxy method for target invocation with callback logging."""
+    def _run_target(self, message: str, target: SupportsTarget) -> dict:
+        """Invoke the target and emit before/after events."""
         self._emit("target_invocation", message=message)
-        result = self.target.invoke(message)
+        result = target.invoke(message)
         self._emit(
             "target_response",
             response=str(result.get("response", ""))[:500],
@@ -185,13 +258,17 @@ class AgentProbeOrchestrator:
     def _emit(self, event_type: str, **data: Any) -> None:
         if not self.callback:
             return
-        self.callback(
-            {
-                "event": event_type,
-                "timestamp": datetime.utcnow().isoformat(),
-                **data,
-            }
-        )
+        event = {
+            "event": event_type,
+            "timestamp": datetime.utcnow().isoformat(),
+            **data,
+        }
+        with self._emit_lock:
+            self.callback(event)
+
+    # ------------------------------------------------------------------
+    # Config helpers
+    # ------------------------------------------------------------------
 
     @staticmethod
     def _merge_with_defaults(user_cfg: dict[str, Any]) -> dict[str, Any]:
@@ -210,9 +287,9 @@ class AgentProbeOrchestrator:
     def _build_default_target(config: dict[str, Any]) -> TargetAgent:
         llm_cfg = config.get("llm", {})
         target_cfg = {
-            "provider": llm_cfg.get("provider", "anthropic"),
-            "model": llm_cfg.get("model", "llama-3.3-70b-versatile"),
-            "api_key_env": llm_cfg.get("api_key_env", "ANTHROPIC_API_KEY"),
+            "provider": llm_cfg.get("provider", "google"),
+            "model": llm_cfg.get("model", "gemini-2.0-flash"),
+            "api_key_env": llm_cfg.get("api_key_env", "GOOGLE_API_KEY"),
             "temperature": llm_cfg.get("temperature", 0.7),
         }
         return TargetAgent(config=target_cfg)
