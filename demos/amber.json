@@ -6,17 +6,13 @@
     "env": {
       "HOST": "0.0.0.0",
       "AGENT_PORT": "8081",
-      "ANTHROPIC_API_KEY": "${config.anthropic_api_key}",
-      "ANTHROPIC_BASE_URL": "${slots.anthropic_api}"
+      "ANTHROPIC_API_KEY": "${config.anthropic_api_key}"
     },
     "network": {
       "endpoints": [
         { "name": "endpoint", "port": 8081 }
       ]
     }
-  },
-  "slots": {
-    "anthropic_api": { "kind": "http" }
   },
   "provides": {
     "a2a": { "kind": "a2a", "endpoint": "endpoint" }
