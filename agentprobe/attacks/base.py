@@ -465,12 +465,19 @@ class BaseAttack(ABC):
         )
 
         try:
-            provider = os.environ.get("AGENTPROBE_LLM_PROVIDER", "anthropic").strip().lower()
-            model = os.environ.get("AGENTPROBE_EVAL_MODEL", os.environ.get("AGENTPROBE_LLM_MODEL", "claude-haiku-4-5-20251001"))
-            api_key_env = os.environ.get("AGENTPROBE_LLM_API_KEY_ENV", "ANTHROPIC_API_KEY")
+            provider = os.environ.get("AGENTPROBE_LLM_PROVIDER", "google").strip().lower()
+            model = os.environ.get("AGENTPROBE_EVAL_MODEL", os.environ.get("AGENTPROBE_LLM_MODEL", "gemini-2.0-flash"))
+            api_key_env = os.environ.get("AGENTPROBE_LLM_API_KEY_ENV", "GOOGLE_API_KEY")
             api_key = os.environ.get(api_key_env, "")
 
-            if provider == "groq":
+            if provider in ("google", "gemini"):
+                import google.generativeai as genai
+
+                genai.configure(api_key=api_key or os.environ.get("GOOGLE_API_KEY", ""))
+                gemini = genai.GenerativeModel(model)
+                result = gemini.generate_content(prompt)
+                raw = result.text.strip()
+            elif provider == "groq":
                 from groq import Groq
 
                 client = Groq(api_key=api_key)

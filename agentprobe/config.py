@@ -7,9 +7,9 @@ from dotenv import load_dotenv
 
 DEFAULT_CONFIG: dict[str, Any] = {
     "llm": {
-        "provider": "anthropic",
-        "model": "claude-haiku-4-5-20251001",
-        "api_key_env": "ANTHROPIC_API_KEY",
+        "provider": "google",
+        "model": "gemini-2.0-flash",
+        "api_key_env": "GOOGLE_API_KEY",
         "max_tokens": 4096,
         "temperature": 0.7,
     },
@@ -18,6 +18,8 @@ DEFAULT_CONFIG: dict[str, Any] = {
         "attacks": "all",               # or list: ["prompt_injection", "tool_manipulation"]
         "recon_messages": 4,
         "payloads_per_attack": 3,
+        "adaptive_retries": True,
+        "max_workers": 8,               # max parallel workers in swarm mode
         "defense_enabled": False,
         "defense_threshold": 0.7,
     },
