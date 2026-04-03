@@ -21,6 +21,7 @@ from langchain_core.messages import HumanMessage, AIMessage, ToolMessage, System
 from langgraph.graph import StateGraph, MessagesState, START, END
 from langgraph.prebuilt import ToolNode
 
+from agentprobe.llm_env import normalize_gemini_env, resolve_google_api_key
 from agentprobe.target.tools import read_document, query_database, write_summary
 from agentprobe.target.database import initialize_database
 
@@ -59,11 +60,12 @@ def _build_graph(model: str, temperature: float, provider: str, api_key_env: str
     if provider_normalized in ("google", "gemini"):
         if ChatGoogleGenerativeAI is None:
             raise ImportError("langchain-google-genai is required for provider='google'.")
-        llm = ChatGoogleGenerativeAI(
-            model=model,
-            temperature=temperature,
-            google_api_key=api_key or os.environ.get("GOOGLE_API_KEY", ""),
-        ).bind_tools(_TOOLS)
+        normalize_gemini_env()
+        resolved = resolve_google_api_key(api_key_env)
+        kwargs: dict[str, Any] = {"model": model, "temperature": temperature}
+        if resolved:
+            kwargs["google_api_key"] = resolved
+        llm = ChatGoogleGenerativeAI(**kwargs).bind_tools(_TOOLS)
     elif provider_normalized == "groq":
         if ChatGroq is None:
             raise ImportError("langchain-groq is required for provider='groq'. Install 'langchain-groq'.")
@@ -120,12 +122,23 @@ class TargetAgent:
         provider = cfg.get("provider", "google")
         api_key_env = cfg.get("api_key_env", "GOOGLE_API_KEY")
 
-        self._graph = _build_graph(model, temperature, provider, api_key_env)
+        self._graph: Any | None = None
+        self._offline_reason = ""
+        try:
+            self._graph = _build_graph(model, temperature, provider, api_key_env)
+        except Exception as exc:
+            if (provider or "").strip().lower() in ("google", "gemini"):
+                self._offline_reason = str(exc)
+            else:
+                raise
         self._history: list = []
         initialize_database()
 
     def invoke(self, message: str) -> dict:
         """Send a user message, return the agent's response with metadata."""
+        if self._graph is None:
+            return self._offline_invoke(message, error=self._offline_reason or "LLM not configured")
+
         prev_len = len(self._history)
         self._history.append(HumanMessage(content=message))
         try:

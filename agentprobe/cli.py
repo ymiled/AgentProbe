@@ -231,6 +231,9 @@ def serve(host: str, port: int, config_path: str | None) -> None:
         raise click.ClickException("uvicorn is required. Run: pip install 'agentprobe[a2a]'")
 
     from agentprobe.a2a.server import create_app
+    from agentprobe.llm_env import normalize_gemini_env
+
+    normalize_gemini_env()
 
     base_url = f"http://{host}:{port}"
     cfg = load_config(config_path)

@@ -47,7 +47,10 @@ from agentprobe.a2a.schemas import (
 )
 from agentprobe.a2a.server import agent_card_spec_dict
 from agentprobe.config import load_config
+from agentprobe.llm_env import normalize_gemini_env
 from agentprobe.target.financial_agent import TargetAgent
+
+normalize_gemini_env()
 
 _llm_cfg = load_config().get("llm", {})
 

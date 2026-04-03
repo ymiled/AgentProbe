@@ -471,12 +471,16 @@ class BaseAttack(ABC):
             api_key = os.environ.get(api_key_env, "")
 
             if provider in ("google", "gemini"):
-                import google.generativeai as genai
+                from agentprobe.llm_env import resolve_google_api_key
 
-                genai.configure(api_key=api_key or os.environ.get("GOOGLE_API_KEY", ""))
-                gemini = genai.GenerativeModel(model)
-                result = gemini.generate_content(prompt)
-                raw = result.text.strip()
+                gkey = (api_key or "").strip() or resolve_google_api_key(api_key_env)
+                if not gkey:
+                    raise ValueError("Missing Google/Gemini API key (GOOGLE_API_KEY or GEMINI_API_KEY)")
+                from google import genai as google_genai
+
+                client = google_genai.Client(api_key=gkey)
+                result = client.models.generate_content(model=model, contents=prompt)
+                raw = (result.text or "").strip()
             elif provider == "groq":
                 from groq import Groq
 

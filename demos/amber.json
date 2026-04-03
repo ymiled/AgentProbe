@@ -7,6 +7,7 @@
       "HOST": "0.0.0.0",
       "AGENT_PORT": "8081",
       "GOOGLE_API_KEY": "${config.google_api_key}",
+      "GEMINI_API_KEY": "${config.google_api_key}",
       "AGENTPROBE_LLM_PROVIDER": "google",
       "AGENTPROBE_LLM_MODEL": "gemini-2.0-flash",
       "AGENTPROBE_LLM_API_KEY_ENV": "GOOGLE_API_KEY"
