@@ -33,24 +33,6 @@ AgentProbe maps directly to the [Agentified Agent Assessment (AAA)](https://agen
 |---|---|
 | **evaluator agent** (benchmark) | AgentProbe: defines tasks, runs attacks, scores responses |
 | **competitor agent** (under test) | Your agent: any A2A-compliant endpoint or local wrapper |
-| **A2A protocol** | `A2ATargetAdapter` (client) + `agentprobe serve` (server) |
-
-```
-AgentBeats platform
-      │
-      │  tasks/send(competitor_agent_url)
-      ▼
-AgentProbe  ←── GET /.well-known/agent.json (Agent Card)
-(evaluator, port 8090)
-      │
-      │  tasks/send(attack_message)  via A2ATargetAdapter
-      ▼
-Your Agent
-(competitor, any port)
-      │
-      └── task result (response) ──► EvaluatorAgent ──► VulnerabilityReport
-```
-
 
 
 ## Live dashboard
@@ -77,14 +59,6 @@ In another terminal:
 cd web
 npm install
 NEXT_PUBLIC_API_URL=http://127.0.0.1:8001 npm run dev
-```
-
-Optional explicit websocket URL:
-
-```bash
-cd web
-npm install
-NEXT_PUBLIC_API_URL=http://127.0.0.1:8001 NEXT_PUBLIC_WS_URL=ws://127.0.0.1:8001 npm run dev
 ```
 
 ### Run a scan
